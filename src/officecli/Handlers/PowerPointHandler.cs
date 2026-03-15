@@ -1146,17 +1146,22 @@ public class PowerPointHandler : IDocumentHandler
                     if (para != null)
                     {
                         var pProps = para.ParagraphProperties ?? (para.ParagraphProperties = new Drawing.ParagraphProperties());
-                        pProps.Alignment = value.ToLowerInvariant() switch
-                        {
-                            "left" or "l" => Drawing.TextAlignmentTypeValues.Left,
-                            "center" or "c" => Drawing.TextAlignmentTypeValues.Center,
-                            "right" or "r" => Drawing.TextAlignmentTypeValues.Right,
-                            "justify" or "j" => Drawing.TextAlignmentTypeValues.Justified,
-                            _ => throw new ArgumentException($"Unknown alignment: {value}")
-                        };
+                        pProps.Alignment = ParseTextAlignment(value);
                     }
                     break;
                 }
+                case "gridspan" or "colspan":
+                    cell.GridSpan = new DocumentFormat.OpenXml.Int32Value(int.Parse(value));
+                    break;
+                case "rowspan":
+                    cell.RowSpan = new DocumentFormat.OpenXml.Int32Value(int.Parse(value));
+                    break;
+                case "vmerge":
+                    cell.VerticalMerge = new DocumentFormat.OpenXml.BooleanValue(bool.Parse(value));
+                    break;
+                case "hmerge":
+                    cell.HorizontalMerge = new DocumentFormat.OpenXml.BooleanValue(bool.Parse(value));
+                    break;
                 default:
                     if (!GenericXmlQuery.SetGenericAttribute(cell, key, value))
                         unsupported.Add(key);
@@ -1452,11 +1457,61 @@ public class PowerPointHandler : IDocumentHandler
                     }
                     break;
 
+                case "underline":
+                    foreach (var run in runs)
+                    {
+                        var rProps = run.RunProperties ?? (run.RunProperties = new Drawing.RunProperties());
+                        rProps.Underline = value.ToLowerInvariant() switch
+                        {
+                            "true" or "single" or "sng" => Drawing.TextUnderlineValues.Single,
+                            "double" or "dbl" => Drawing.TextUnderlineValues.Double,
+                            "heavy" => Drawing.TextUnderlineValues.Heavy,
+                            "dotted" => Drawing.TextUnderlineValues.Dotted,
+                            "dash" => Drawing.TextUnderlineValues.Dash,
+                            "wavy" => Drawing.TextUnderlineValues.Wavy,
+                            "false" or "none" => Drawing.TextUnderlineValues.None,
+                            _ => Drawing.TextUnderlineValues.Single
+                        };
+                    }
+                    break;
+
+                case "strikethrough" or "strike":
+                    foreach (var run in runs)
+                    {
+                        var rProps = run.RunProperties ?? (run.RunProperties = new Drawing.RunProperties());
+                        rProps.Strike = value.ToLowerInvariant() switch
+                        {
+                            "true" or "single" => Drawing.TextStrikeValues.SingleStrike,
+                            "double" => Drawing.TextStrikeValues.DoubleStrike,
+                            "false" or "none" => Drawing.TextStrikeValues.NoStrike,
+                            _ => Drawing.TextStrikeValues.SingleStrike
+                        };
+                    }
+                    break;
+
                 case "fill":
                 {
                     var spPr = shape.ShapeProperties;
                     if (spPr == null) { unsupported.Add(key); break; }
                     ApplyShapeFill(spPr, value);
+                    break;
+                }
+
+                case "gradient":
+                {
+                    var spPr = shape.ShapeProperties;
+                    if (spPr == null) { unsupported.Add(key); break; }
+                    ApplyGradientFill(spPr, value);
+                    break;
+                }
+
+                case "liststyle" or "list":
+                {
+                    foreach (var para in shape.TextBody?.Elements<Drawing.Paragraph>() ?? Enumerable.Empty<Drawing.Paragraph>())
+                    {
+                        var pProps = para.ParagraphProperties ?? (para.ParagraphProperties = new Drawing.ParagraphProperties());
+                        ApplyListStyle(pProps, value);
+                    }
                     break;
                 }
 
@@ -1502,6 +1557,125 @@ public class PowerPointHandler : IDocumentHandler
                         existingGeom.Preset = ParsePresetShape(value);
                     else
                         spPr.AppendChild(new Drawing.PresetGeometry(new Drawing.AdjustValueList()) { Preset = ParsePresetShape(value) });
+                    break;
+                }
+
+                case "line" or "linecolor" or "line.color":
+                {
+                    var spPr = shape.ShapeProperties;
+                    if (spPr == null) { unsupported.Add(key); break; }
+                    var outline = spPr.GetFirstChild<Drawing.Outline>() ?? spPr.AppendChild(new Drawing.Outline());
+                    outline.RemoveAllChildren<Drawing.SolidFill>();
+                    outline.RemoveAllChildren<Drawing.NoFill>();
+                    if (value.Equals("none", StringComparison.OrdinalIgnoreCase))
+                        outline.AppendChild(new Drawing.NoFill());
+                    else
+                        outline.AppendChild(new Drawing.SolidFill(new Drawing.RgbColorModelHex { Val = value.TrimStart('#').ToUpperInvariant() }));
+                    break;
+                }
+
+                case "linewidth" or "line.width":
+                {
+                    var spPr = shape.ShapeProperties;
+                    if (spPr == null) { unsupported.Add(key); break; }
+                    var outline = spPr.GetFirstChild<Drawing.Outline>() ?? spPr.AppendChild(new Drawing.Outline());
+                    outline.Width = (int)ParseEmu(value);
+                    break;
+                }
+
+                case "linedash" or "line.dash":
+                {
+                    var spPr = shape.ShapeProperties;
+                    if (spPr == null) { unsupported.Add(key); break; }
+                    var outline = spPr.GetFirstChild<Drawing.Outline>() ?? spPr.AppendChild(new Drawing.Outline());
+                    outline.RemoveAllChildren<Drawing.PresetDash>();
+                    outline.AppendChild(new Drawing.PresetDash { Val = value.ToLowerInvariant() switch
+                    {
+                        "solid" => Drawing.PresetLineDashValues.Solid,
+                        "dot" => Drawing.PresetLineDashValues.Dot,
+                        "dash" => Drawing.PresetLineDashValues.Dash,
+                        "dashdot" or "dash_dot" => Drawing.PresetLineDashValues.DashDot,
+                        "longdash" or "lgdash" or "lg_dash" => Drawing.PresetLineDashValues.LargeDash,
+                        "longdashdot" or "lgdashdot" or "lg_dash_dot" => Drawing.PresetLineDashValues.LargeDashDot,
+                        _ => Drawing.PresetLineDashValues.Solid
+                    }});
+                    break;
+                }
+
+                case "rotation" or "rotate":
+                {
+                    var spPr = shape.ShapeProperties;
+                    if (spPr == null) { unsupported.Add(key); break; }
+                    var xfrm = spPr.Transform2D ?? (spPr.Transform2D = new Drawing.Transform2D());
+                    xfrm.Rotation = (int)(double.Parse(value) * 60000); // degrees to 60000ths
+                    break;
+                }
+
+                case "opacity":
+                {
+                    var spPr = shape.ShapeProperties;
+                    if (spPr == null) { unsupported.Add(key); break; }
+                    var solidFill = spPr.GetFirstChild<Drawing.SolidFill>();
+                    if (solidFill != null)
+                    {
+                        var color = solidFill.GetFirstChild<Drawing.RgbColorModelHex>();
+                        if (color != null)
+                        {
+                            color.RemoveAllChildren<Drawing.Alpha>();
+                            var pct = (int)(double.Parse(value) * 1000); // 0.0-1.0 → 0-100000
+                            color.AppendChild(new Drawing.Alpha { Val = pct });
+                        }
+                    }
+                    break;
+                }
+
+                case "linespacing" or "line.spacing":
+                {
+                    foreach (var para in shape.TextBody?.Elements<Drawing.Paragraph>() ?? Enumerable.Empty<Drawing.Paragraph>())
+                    {
+                        var pProps = para.ParagraphProperties ?? (para.ParagraphProperties = new Drawing.ParagraphProperties());
+                        pProps.RemoveAllChildren<Drawing.LineSpacing>();
+                        pProps.AppendChild(new Drawing.LineSpacing(
+                            new Drawing.SpacingPercent { Val = (int)(double.Parse(value) * 1000) })); // e.g. 1.5 → 150000 (150%)
+                    }
+                    break;
+                }
+
+                case "spacebefore" or "space.before":
+                {
+                    foreach (var para in shape.TextBody?.Elements<Drawing.Paragraph>() ?? Enumerable.Empty<Drawing.Paragraph>())
+                    {
+                        var pProps = para.ParagraphProperties ?? (para.ParagraphProperties = new Drawing.ParagraphProperties());
+                        pProps.RemoveAllChildren<Drawing.SpaceBefore>();
+                        pProps.AppendChild(new Drawing.SpaceBefore(new Drawing.SpacingPoints { Val = (int)(double.Parse(value) * 100) })); // pt
+                    }
+                    break;
+                }
+
+                case "spaceafter" or "space.after":
+                {
+                    foreach (var para in shape.TextBody?.Elements<Drawing.Paragraph>() ?? Enumerable.Empty<Drawing.Paragraph>())
+                    {
+                        var pProps = para.ParagraphProperties ?? (para.ParagraphProperties = new Drawing.ParagraphProperties());
+                        pProps.RemoveAllChildren<Drawing.SpaceAfter>();
+                        pProps.AppendChild(new Drawing.SpaceAfter(new Drawing.SpacingPoints { Val = (int)(double.Parse(value) * 100) })); // pt
+                    }
+                    break;
+                }
+
+                case "autofit":
+                {
+                    var bodyPr = shape.TextBody?.Elements<Drawing.BodyProperties>().FirstOrDefault();
+                    if (bodyPr == null) { unsupported.Add(key); break; }
+                    bodyPr.RemoveAllChildren<Drawing.NormalAutoFit>();
+                    bodyPr.RemoveAllChildren<Drawing.ShapeAutoFit>();
+                    bodyPr.RemoveAllChildren<Drawing.NoAutoFit>();
+                    switch (value.ToLowerInvariant())
+                    {
+                        case "true" or "normal": bodyPr.AppendChild(new Drawing.NormalAutoFit()); break;
+                        case "shape": bodyPr.AppendChild(new Drawing.ShapeAutoFit()); break;
+                        case "false" or "none": bodyPr.AppendChild(new Drawing.NoAutoFit()); break;
+                    }
                     break;
                 }
 
@@ -1684,12 +1858,6 @@ public class PowerPointHandler : IDocumentHandler
                     }
                 }
 
-                // Shape fill
-                if (properties.TryGetValue("fill", out var fillVal))
-                {
-                    ApplyShapeFill(newShape.ShapeProperties!, fillVal);
-                }
-
                 // Text margin (padding inside shape)
                 if (properties.TryGetValue("margin", out var marginVal))
                 {
@@ -1725,6 +1893,59 @@ public class PowerPointHandler : IDocumentHandler
                     }
                 }
 
+                // Rotation
+                if (properties.TryGetValue("rotation", out var rotStr) || properties.TryGetValue("rotate", out rotStr))
+                {
+                    // Will be set on Transform2D below
+                }
+
+                // Underline
+                if (properties.TryGetValue("underline", out var ulVal))
+                {
+                    foreach (var run in newShape.Descendants<Drawing.Run>())
+                    {
+                        var rProps = run.RunProperties ?? (run.RunProperties = new Drawing.RunProperties());
+                        rProps.Underline = ulVal.ToLowerInvariant() switch
+                        {
+                            "true" or "single" or "sng" => Drawing.TextUnderlineValues.Single,
+                            "double" or "dbl" => Drawing.TextUnderlineValues.Double,
+                            "false" or "none" => Drawing.TextUnderlineValues.None,
+                            _ => Drawing.TextUnderlineValues.Single
+                        };
+                    }
+                }
+
+                // Strikethrough
+                if (properties.TryGetValue("strikethrough", out var stVal) || properties.TryGetValue("strike", out stVal))
+                {
+                    foreach (var run in newShape.Descendants<Drawing.Run>())
+                    {
+                        var rProps = run.RunProperties ?? (run.RunProperties = new Drawing.RunProperties());
+                        rProps.Strike = stVal.ToLowerInvariant() switch
+                        {
+                            "true" or "single" => Drawing.TextStrikeValues.SingleStrike,
+                            "double" => Drawing.TextStrikeValues.DoubleStrike,
+                            "false" or "none" => Drawing.TextStrikeValues.NoStrike,
+                            _ => Drawing.TextStrikeValues.SingleStrike
+                        };
+                    }
+                }
+
+                // AutoFit
+                if (properties.TryGetValue("autofit", out var afVal))
+                {
+                    var bodyPr = newShape.TextBody?.Elements<Drawing.BodyProperties>().FirstOrDefault();
+                    if (bodyPr != null)
+                    {
+                        switch (afVal.ToLowerInvariant())
+                        {
+                            case "true" or "normal": bodyPr.AppendChild(new Drawing.NormalAutoFit()); break;
+                            case "shape": bodyPr.AppendChild(new Drawing.ShapeAutoFit()); break;
+                            case "false" or "none": bodyPr.AppendChild(new Drawing.NoAutoFit()); break;
+                        }
+                    }
+                }
+
                 // Position and size (in EMU, 1cm = 360000 EMU; or parse as cm/in)
                 {
                     long xEmu = 0, yEmu = 0;
@@ -1734,15 +1955,56 @@ public class PowerPointHandler : IDocumentHandler
                     if (properties.TryGetValue("width", out var wStr)) cxEmu = ParseEmu(wStr);
                     if (properties.TryGetValue("height", out var hStr)) cyEmu = ParseEmu(hStr);
 
-                    newShape.ShapeProperties!.Transform2D = new Drawing.Transform2D
+                    var xfrm = new Drawing.Transform2D
                     {
                         Offset = new Drawing.Offset { X = xEmu, Y = yEmu },
                         Extents = new Drawing.Extents { Cx = cxEmu, Cy = cyEmu }
                     };
+                    if (properties.TryGetValue("rotation", out var rotVal) || properties.TryGetValue("rotate", out rotVal))
+                        xfrm.Rotation = (int)(double.Parse(rotVal) * 60000);
+                    newShape.ShapeProperties!.Transform2D = xfrm;
+
                     var presetName = properties.GetValueOrDefault("preset", "rect");
                     newShape.ShapeProperties.AppendChild(
                         new Drawing.PresetGeometry(new Drawing.AdjustValueList()) { Preset = ParsePresetShape(presetName) }
                     );
+                }
+
+                // Shape fill (after xfrm and prstGeom to maintain schema order)
+                if (properties.TryGetValue("fill", out var fillVal))
+                {
+                    ApplyShapeFill(newShape.ShapeProperties!, fillVal);
+                }
+
+                // Gradient fill
+                if (properties.TryGetValue("gradient", out var gradVal))
+                {
+                    ApplyGradientFill(newShape.ShapeProperties!, gradVal);
+                }
+
+                // Line/border (after fill per schema: xfrm → prstGeom → fill → ln)
+                if (properties.TryGetValue("line", out var lineColor) || properties.TryGetValue("linecolor", out lineColor) || properties.TryGetValue("line.color", out lineColor))
+                {
+                    var outline = newShape.ShapeProperties!.GetFirstChild<Drawing.Outline>() ?? newShape.ShapeProperties.AppendChild(new Drawing.Outline());
+                    if (lineColor.Equals("none", StringComparison.OrdinalIgnoreCase))
+                        outline.AppendChild(new Drawing.NoFill());
+                    else
+                        outline.AppendChild(new Drawing.SolidFill(new Drawing.RgbColorModelHex { Val = lineColor.TrimStart('#').ToUpperInvariant() }));
+                }
+                if (properties.TryGetValue("linewidth", out var lwStr) || properties.TryGetValue("line.width", out lwStr))
+                {
+                    var outline = newShape.ShapeProperties!.GetFirstChild<Drawing.Outline>() ?? newShape.ShapeProperties.AppendChild(new Drawing.Outline());
+                    outline.Width = (int)ParseEmu(lwStr);
+                }
+
+                // List style (bullet/numbered)
+                if (properties.TryGetValue("list", out var listVal) || properties.TryGetValue("liststyle", out listVal))
+                {
+                    foreach (var para in newShape.TextBody?.Elements<Drawing.Paragraph>() ?? Enumerable.Empty<Drawing.Paragraph>())
+                    {
+                        var pProps = para.ParagraphProperties ?? (para.ParagraphProperties = new Drawing.ParagraphProperties());
+                        ApplyListStyle(pProps, listVal);
+                    }
                 }
 
                 shapeTree.AppendChild(newShape);
@@ -2010,8 +2272,10 @@ public class PowerPointHandler : IDocumentHandler
 
                 // Ensure slide root has xmlns:a14 and mc:Ignorable="a14" so PowerPoint accepts the equation
                 var eqSlide = GetSlide(eqSlidePart);
-                eqSlide.AddNamespaceDeclaration("a14", "http://schemas.microsoft.com/office/drawing/2010/main");
-                eqSlide.AddNamespaceDeclaration("mc", "http://schemas.openxmlformats.org/markup-compatibility/2006");
+                if (eqSlide.LookupNamespace("a14") == null)
+                    eqSlide.AddNamespaceDeclaration("a14", "http://schemas.microsoft.com/office/drawing/2010/main");
+                if (eqSlide.LookupNamespace("mc") == null)
+                    eqSlide.AddNamespaceDeclaration("mc", "http://schemas.openxmlformats.org/markup-compatibility/2006");
                 var currentIgnorable = eqSlide.MCAttributes?.Ignorable?.Value ?? "";
                 if (!currentIgnorable.Contains("a14"))
                 {
@@ -2892,6 +3156,33 @@ public class PowerPointHandler : IDocumentHandler
         if (presetGeom?.Preset?.HasValue == true)
             node.Format["preset"] = presetGeom.Preset.InnerText;
 
+        // Gradient fill
+        var gradFill = shape.ShapeProperties?.GetFirstChild<Drawing.GradientFill>();
+        if (gradFill != null)
+        {
+            var stops = gradFill.GradientStopList?.Elements<Drawing.GradientStop>()
+                .Select(gs => gs.GetFirstChild<Drawing.RgbColorModelHex>()?.Val?.Value ?? "?")
+                .ToList();
+            if (stops?.Count > 0)
+            {
+                var gradStr = string.Join("-", stops);
+                var linear = gradFill.GetFirstChild<Drawing.LinearGradientFill>();
+                if (linear?.Angle?.HasValue == true)
+                    gradStr += $"-{linear.Angle.Value / 60000}";
+                node.Format["gradient"] = gradStr;
+            }
+        }
+
+        // List style (from first paragraph)
+        var firstParaBullet = shape.TextBody?.Elements<Drawing.Paragraph>().FirstOrDefault()?.ParagraphProperties;
+        if (firstParaBullet != null)
+        {
+            var charBullet = firstParaBullet.GetFirstChild<Drawing.CharacterBullet>();
+            var autoBullet = firstParaBullet.GetFirstChild<Drawing.AutoNumberedBullet>();
+            if (charBullet != null) node.Format["list"] = charBullet.Char?.Value ?? "•";
+            else if (autoBullet?.Type?.HasValue == true) node.Format["list"] = autoBullet.Type.InnerText;
+        }
+
         // Collect font info
         var firstRun = shape.TextBody?.Descendants<Drawing.Run>().FirstOrDefault();
         if (firstRun?.RunProperties != null)
@@ -2905,7 +3196,27 @@ public class PowerPointHandler : IDocumentHandler
 
             if (firstRun.RunProperties.Bold?.Value == true) node.Format["bold"] = true;
             if (firstRun.RunProperties.Italic?.Value == true) node.Format["italic"] = true;
+            if (firstRun.RunProperties.Underline?.HasValue == true && firstRun.RunProperties.Underline.Value != Drawing.TextUnderlineValues.None)
+                node.Format["underline"] = firstRun.RunProperties.Underline.InnerText;
+            if (firstRun.RunProperties.Strike?.HasValue == true && firstRun.RunProperties.Strike.Value != Drawing.TextStrikeValues.NoStrike)
+                node.Format["strikethrough"] = firstRun.RunProperties.Strike.InnerText;
         }
+
+        // Line/border
+        var outline = shape.ShapeProperties?.GetFirstChild<Drawing.Outline>();
+        if (outline != null)
+        {
+            var lineFill = outline.GetFirstChild<Drawing.SolidFill>()?.GetFirstChild<Drawing.RgbColorModelHex>()?.Val?.Value;
+            if (lineFill != null) node.Format["line"] = lineFill;
+            if (outline.GetFirstChild<Drawing.NoFill>() != null) node.Format["line"] = "none";
+            if (outline.Width?.HasValue == true) node.Format["lineWidth"] = FormatEmu(outline.Width.Value);
+            var dash = outline.GetFirstChild<Drawing.PresetDash>();
+            if (dash?.Val?.HasValue == true) node.Format["lineDash"] = dash.Val.InnerText;
+        }
+
+        // Rotation
+        if (xfrm?.Rotation != null && xfrm.Rotation.Value != 0)
+            node.Format["rotation"] = $"{xfrm.Rotation.Value / 60000.0}°";
 
         // Text margin
         var bodyPr = shape.TextBody?.Elements<Drawing.BodyProperties>().FirstOrDefault();
@@ -3239,6 +3550,23 @@ public class PowerPointHandler : IDocumentHandler
         };
     }
 
+    private static void InsertFillElement(ShapeProperties spPr, OpenXmlElement fillElement)
+    {
+        // Schema order: xfrm → prstGeom → fill → ln → effectLst
+        // Insert fill after prstGeom if present, else after xfrm, else prepend
+        var prstGeom = spPr.GetFirstChild<Drawing.PresetGeometry>();
+        if (prstGeom != null)
+            spPr.InsertAfter(fillElement, prstGeom);
+        else
+        {
+            var xfrm = spPr.Transform2D;
+            if (xfrm != null)
+                spPr.InsertAfter(fillElement, xfrm);
+            else
+                spPr.PrependChild(fillElement);
+        }
+    }
+
     private static void ApplyShapeFill(ShapeProperties spPr, string value)
     {
         // Remove any existing fill
@@ -3249,26 +3577,13 @@ public class PowerPointHandler : IDocumentHandler
 
         if (value.Equals("none", StringComparison.OrdinalIgnoreCase))
         {
-            var noFill = new Drawing.NoFill();
-            if (spPr is OpenXmlCompositeElement composite)
-            {
-                if (!composite.AddChild(noFill, throwOnError: false))
-                    spPr.PrependChild(noFill);
-            }
-            else
-                spPr.PrependChild(noFill);
+            InsertFillElement(spPr, new Drawing.NoFill());
         }
         else
         {
             var solidFill = new Drawing.SolidFill();
             solidFill.Append(new Drawing.RgbColorModelHex { Val = value.TrimStart('#').ToUpperInvariant() });
-            if (spPr is OpenXmlCompositeElement composite)
-            {
-                if (!composite.AddChild(solidFill, throwOnError: false))
-                    spPr.PrependChild(solidFill);
-            }
-            else
-                spPr.PrependChild(solidFill);
+            InsertFillElement(spPr, solidFill);
         }
     }
 
@@ -3310,6 +3625,103 @@ public class PowerPointHandler : IDocumentHandler
             "justify" or "j" => Drawing.TextAlignmentTypeValues.Justified,
             _ => throw new ArgumentException($"Invalid align: {value}. Use: left, center, right, justify")
         };
+    }
+
+    /// <summary>
+    /// Apply gradient fill to ShapeProperties.
+    /// Format: "color1-color2" for linear, "color1-color2-angle" for angled, "color1-color2-color3" for 3 stops.
+    /// e.g. "FF0000-0000FF", "FF0000-0000FF-90", "FF0000-00FF00-0000FF"
+    /// </summary>
+    private static void ApplyGradientFill(ShapeProperties spPr, string value)
+    {
+        spPr.RemoveAllChildren<Drawing.SolidFill>();
+        spPr.RemoveAllChildren<Drawing.NoFill>();
+        spPr.RemoveAllChildren<Drawing.GradientFill>();
+
+        var parts = value.Split('-');
+        if (parts.Length < 2)
+            throw new ArgumentException("gradient requires at least 2 colors separated by '-', e.g. FF0000-0000FF or FF0000-0000FF-90");
+
+        var gradFill = new Drawing.GradientFill();
+        var gsLst = new Drawing.GradientStopList();
+
+        // Check if last part is a number (angle)
+        int angle = 5400000; // default: top-to-bottom (90°)
+        var colorParts = parts.ToList();
+        if (colorParts.Count >= 2 && int.TryParse(colorParts.Last(), out var angleDeg) && colorParts.Last().Length <= 3)
+        {
+            angle = angleDeg * 60000;
+            colorParts.RemoveAt(colorParts.Count - 1);
+        }
+
+        for (int i = 0; i < colorParts.Count; i++)
+        {
+            var pos = colorParts.Count == 1 ? 0 : (int)((long)i * 100000 / (colorParts.Count - 1));
+            var gs = new Drawing.GradientStop { Position = pos };
+            gs.AppendChild(new Drawing.RgbColorModelHex { Val = colorParts[i].TrimStart('#').ToUpperInvariant() });
+            gsLst.AppendChild(gs);
+        }
+
+        gradFill.AppendChild(gsLst);
+        gradFill.AppendChild(new Drawing.LinearGradientFill { Angle = angle, Scaled = true });
+
+        InsertFillElement(spPr, gradFill);
+    }
+
+    /// <summary>
+    /// Apply list style (bullet/numbered) to ParagraphProperties.
+    /// Values: "bullet" or "•", "numbered" or "1", "alpha" or "a", "roman" or "i", "none"
+    /// </summary>
+    private static void ApplyListStyle(Drawing.ParagraphProperties pProps, string value)
+    {
+        pProps.RemoveAllChildren<Drawing.CharacterBullet>();
+        pProps.RemoveAllChildren<Drawing.AutoNumberedBullet>();
+        pProps.RemoveAllChildren<Drawing.NoBullet>();
+        pProps.RemoveAllChildren<Drawing.BulletFont>();
+
+        switch (value.ToLowerInvariant())
+        {
+            case "bullet" or "•" or "disc":
+                pProps.AppendChild(new Drawing.CharacterBullet { Char = "•" });
+                break;
+            case "dash" or "-" or "–":
+                pProps.AppendChild(new Drawing.CharacterBullet { Char = "–" });
+                break;
+            case "arrow" or ">" or "→":
+                pProps.AppendChild(new Drawing.CharacterBullet { Char = "→" });
+                break;
+            case "check" or "✓":
+                pProps.AppendChild(new Drawing.CharacterBullet { Char = "✓" });
+                break;
+            case "star" or "★":
+                pProps.AppendChild(new Drawing.CharacterBullet { Char = "★" });
+                break;
+            case "numbered" or "number" or "1":
+                pProps.AppendChild(new Drawing.AutoNumberedBullet { Type = Drawing.TextAutoNumberSchemeValues.ArabicPeriod });
+                break;
+            case "alpha" or "a":
+                pProps.AppendChild(new Drawing.AutoNumberedBullet { Type = Drawing.TextAutoNumberSchemeValues.AlphaLowerCharacterPeriod });
+                break;
+            case "alphaupper" or "A":
+                pProps.AppendChild(new Drawing.AutoNumberedBullet { Type = Drawing.TextAutoNumberSchemeValues.AlphaUpperCharacterPeriod });
+                break;
+            case "roman" or "i":
+                pProps.AppendChild(new Drawing.AutoNumberedBullet { Type = Drawing.TextAutoNumberSchemeValues.RomanLowerCharacterPeriod });
+                break;
+            case "romanupper" or "I":
+                pProps.AppendChild(new Drawing.AutoNumberedBullet { Type = Drawing.TextAutoNumberSchemeValues.RomanUpperCharacterPeriod });
+                break;
+            case "none" or "false":
+                pProps.AppendChild(new Drawing.NoBullet());
+                break;
+            default:
+                // Custom character
+                if (value.Length <= 2)
+                    pProps.AppendChild(new Drawing.CharacterBullet { Char = value });
+                else
+                    throw new ArgumentException($"Invalid list style: {value}. Use: bullet, numbered, alpha, roman, none, or a single character");
+                break;
+        }
     }
 
     private static long ParseEmu(string value)

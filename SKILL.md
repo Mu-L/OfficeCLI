@@ -63,10 +63,10 @@ For large documents, ALWAYS use `--max-lines` or `--start`/`--end` to limit outp
 | Word table | `/body/tbl[1]` | `alignment`, `width`, ... |
 | Word document | `/` | `defaultFont`, `pageBackground`, `pageWidth`, `pageHeight`, `marginTop/Bottom/Left/Right`, ... |
 | Excel cell | `/Sheet1/A1` | `value`, `formula`, `clear`, `font.bold/italic/strike/underline/color/size/name`, `fill`(hex RGB), `alignment.horizontal/vertical/wrapText`, `numFmt`, ... |
-| PPT shape | `/slide[1]/shape[1]` | `text`(supports `\n` for line breaks), `font`, `size`, `bold`, `italic`, `color`, `fill`(hex RGB or "none"), `preset`(shape geometry), `margin`(text padding, e.g. `0.5cm`), `align`(left/center/right/justify), `valign`(top/center/bottom), `x`, `y`, `width`, `height`, ... |
+| PPT shape | `/slide[1]/shape[1]` | `text`(`\n` for line breaks), `font`, `size`, `bold`, `italic`, `underline`, `strikethrough`, `color`, `fill`, `gradient`(e.g. `FF0000-0000FF-90`), `line`, `lineWidth`, `lineDash`, `preset`, `margin`, `align`, `valign`, `list`(bullet/numbered/alpha/roman), `lineSpacing`, `spaceBefore`, `spaceAfter`, `rotation`, `opacity`, `autoFit`, `x`, `y`, `width`, `height` |
 | PPT table | `/slide[1]/table[1]` | `x`, `y`, `width`, `height`, `name`, ... |
 | PPT table row | `/slide[1]/table[1]/tr[1]` | `height`; other props (text, bold, fill, ...) apply to all cells in row |
-| PPT table cell | `/slide[1]/table[1]/tr[1]/tc[1]` | `text`, `font`, `size`, `bold`, `italic`, `color`, `fill`, `align`, ... |
+| PPT table cell | `/slide[1]/table[1]/tr[1]/tc[1]` | `text`, `font`, `size`, `bold`, `italic`, `color`, `fill`, `align`, `gridspan`/`colspan`, `rowspan`, `vmerge`, `hmerge` |
 | PPT placeholder | `/slide[1]/placeholder[title]` | Same as shape. Types: `title`, `body`, `subtitle`, `date`, `footer`, `slidenum`. Auto-created from layout if missing. |
 
 Composite props (`pBdr`, `tabs`, `lang`, `bdr`) → use L3 (`raw-set --action setattr`).
@@ -77,7 +77,7 @@ Composite props (`pBdr`, `tabs`, `lang`, `bdr`) → use L3 (`raw-set --action se
 |--------|--------------|
 | Word | `paragraph`(text,font,size,bold,style,alignment,...), `run`(text,font,size,bold,italic,...), `table`(rows,cols), `picture`(path,width,height,alt,...), `equation`(formula,mode), `comment`(text,author,initials,date,...) |
 | Excel | `sheet`(name), `row`(cols), `cell`(ref,value,formula,...), `databar`(sqref,min,max,color,...) |
-| PPT | `slide`(title,text), `shape`(text(supports `\n`),font,size,name,preset,fill,margin,align,valign,x,y,width,height), `table`(rows,cols,x,y,width,height), `picture`(path,width,height,x,y,alt), `equation`(formula) |
+| PPT | `slide`(title,text), `shape`(text,font,size,name,bold,italic,underline,strikethrough,color,fill,gradient,line,lineWidth,lineDash,preset,margin,align,valign,list,lineSpacing,rotation,opacity,autoFit,x,y,width,height), `table`(rows,cols,x,y,width,height; cells: gridspan,rowspan,vmerge,hmerge), `picture`(path,width,height,x,y,alt), `equation`(formula,x,y,width,height) |
 
 Dimensions: raw EMU or suffixed `cm`/`in`/`pt`/`px`. Equation formula: LaTeX subset. `--from <path>` clones an existing element (cross-part relationships handled automatically).
 

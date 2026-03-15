@@ -639,12 +639,25 @@ Shape properties (/slide[N]/shape[M]) -- applies to all runs:
   size       Font size in points
   bold       true/false
   italic     true/false
+  underline  true/single/double/heavy/dotted/dash/wavy/false
+  strikethrough  true/single/double/false (alias: strike)
   color      Hex RGB text color (e.g. FF0000)
   fill       Hex RGB shape fill (e.g. 4472C4) or "none"
+  line       Hex RGB border color (e.g. FF0000) or "none" (alias: linecolor, line.color)
+  lineWidth  Border width (EMU or cm/pt, e.g. 2pt) (alias: line.width)
+  lineDash   Border dash style: solid/dot/dash/dashdot/longdash (alias: line.dash)
   preset     Shape geometry (e.g. roundRect, ellipse, rightArrow, diamond, star5)
   margin     Text padding inside shape (e.g. 0.5cm or left,top,right,bottom: 0.5cm,0.3cm,0.5cm,0.3cm)
   align      Text horizontal alignment: left (l), center (c), right (r), justify (j) — applies to all paragraphs
   valign     Text vertical alignment: top (t), center/middle (c/m), bottom (b)
+  lineSpacing  Line spacing multiplier (e.g. 1.5 for 150%)
+  spaceBefore  Space before paragraphs in points (e.g. 6)
+  spaceAfter   Space after paragraphs in points (e.g. 6)
+  gradient   Gradient fill: color1-color2[-angle] (e.g. FF0000-0000FF-90 for red→blue at 90°)
+  list       List style: bullet/numbered/alpha/roman/none or a custom character (e.g. ✓)
+  rotation   Rotation angle in degrees (e.g. 45) (alias: rotate)
+  opacity    Fill opacity 0.0-1.0 (e.g. 0.5 for 50%)
+  autoFit    Text auto-fit: true/normal, shape, false/none
   x          Horizontal position (EMU or cm/in/pt/px, e.g. 2cm)
   y          Vertical position (EMU or cm/in/pt/px, e.g. 3cm)
   width      Shape width (EMU or cm/in/pt/px, e.g. 10cm)
@@ -657,7 +670,10 @@ Table row properties (/slide[N]/table[M]/tr[R]):
   height; other props apply to all cells in the row
 
 Table cell properties (/slide[N]/table[M]/tr[R]/tc[C]):
-  text, font, size, bold, italic, color, fill, align
+  text, font, size, bold, italic, color, fill, align,
+  gridspan/colspan (horizontal merge), rowspan (vertical merge),
+  hmerge (true for continuation cell in horizontal merge),
+  vmerge (true for continuation cell in vertical merge)
 
 Placeholder properties (/slide[N]/placeholder[M] or /slide[N]/placeholder[type]):
   Same as shape properties. Types: title, body, subtitle, date, footer, slidenum
@@ -694,9 +710,13 @@ Types and properties:
     title (optional), text (optional)
 
   shape (textbox)  -- parent: /slide[N]
-    text (supports \n for line breaks), name, font, size, bold, italic, color, fill,
+    text (supports \n for line breaks), name, font, size, bold, italic,
+    underline, strikethrough, color, fill,
+    line (border color), lineWidth, lineDash,
     margin (text padding: 0.5cm or left,top,right,bottom),
     align (left/center/right/justify), valign (top/center/bottom),
+    gradient (e.g. FF0000-0000FF-90), list (bullet/numbered/alpha/roman),
+    lineSpacing, spaceBefore, spaceAfter, rotation, opacity, autoFit,
     preset (shape geometry: rect, roundRect, ellipse, triangle, diamond, pentagon, hexagon,
             star5, rightArrow, leftArrow, chevron, plus, heart, cloud, cube, can, line,
             callout, process, decision, smiley, frame, gear6, ...),
