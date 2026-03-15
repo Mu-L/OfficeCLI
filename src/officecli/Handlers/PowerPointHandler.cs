@@ -792,14 +792,7 @@ public class PowerPointHandler : IDocumentHandler
                 {
                     case "align":
                         var pProps = para.ParagraphProperties ?? (para.ParagraphProperties = new Drawing.ParagraphProperties());
-                        pProps.Alignment = value.ToLowerInvariant() switch
-                        {
-                            "left" or "l" => Drawing.TextAlignmentTypeValues.Left,
-                            "center" or "c" => Drawing.TextAlignmentTypeValues.Center,
-                            "right" or "r" => Drawing.TextAlignmentTypeValues.Right,
-                            "justify" or "j" => Drawing.TextAlignmentTypeValues.Justified,
-                            _ => throw new ArgumentException($"Unknown alignment: {value}. Use: left, center, right, justify")
-                        };
+                        pProps.Alignment = ParseTextAlignment(value);
                         break;
                     default:
                         // Apply run-level properties to all runs in this paragraph
@@ -1475,6 +1468,31 @@ public class PowerPointHandler : IDocumentHandler
                     break;
                 }
 
+                case "align":
+                {
+                    var alignment = ParseTextAlignment(value);
+                    foreach (var para in shape.TextBody?.Elements<Drawing.Paragraph>() ?? Enumerable.Empty<Drawing.Paragraph>())
+                    {
+                        var pProps = para.ParagraphProperties ?? (para.ParagraphProperties = new Drawing.ParagraphProperties());
+                        pProps.Alignment = alignment;
+                    }
+                    break;
+                }
+
+                case "valign":
+                {
+                    var bodyPr = shape.TextBody?.Elements<Drawing.BodyProperties>().FirstOrDefault();
+                    if (bodyPr == null) { unsupported.Add(key); break; }
+                    bodyPr.Anchor = value.ToLowerInvariant() switch
+                    {
+                        "top" or "t" => Drawing.TextAnchoringTypeValues.Top,
+                        "center" or "middle" or "c" or "m" => Drawing.TextAnchoringTypeValues.Center,
+                        "bottom" or "b" => Drawing.TextAnchoringTypeValues.Bottom,
+                        _ => throw new ArgumentException($"Invalid valign: {value}. Use top/center/bottom")
+                    };
+                    break;
+                }
+
                 case "preset":
                 {
                     var spPr = shape.ShapeProperties;
@@ -1678,6 +1696,33 @@ public class PowerPointHandler : IDocumentHandler
                     var bodyPr = newShape.TextBody?.Elements<Drawing.BodyProperties>().FirstOrDefault();
                     if (bodyPr != null)
                         ApplyTextMargin(bodyPr, marginVal);
+                }
+
+                // Text alignment (horizontal)
+                if (properties.TryGetValue("align", out var alignVal))
+                {
+                    var alignment = ParseTextAlignment(alignVal);
+                    foreach (var para in newShape.TextBody?.Elements<Drawing.Paragraph>() ?? Enumerable.Empty<Drawing.Paragraph>())
+                    {
+                        var pProps = para.ParagraphProperties ?? (para.ParagraphProperties = new Drawing.ParagraphProperties());
+                        pProps.Alignment = alignment;
+                    }
+                }
+
+                // Vertical alignment
+                if (properties.TryGetValue("valign", out var valignVal))
+                {
+                    var bodyPr = newShape.TextBody?.Elements<Drawing.BodyProperties>().FirstOrDefault();
+                    if (bodyPr != null)
+                    {
+                        bodyPr.Anchor = valignVal.ToLowerInvariant() switch
+                        {
+                            "top" or "t" => Drawing.TextAnchoringTypeValues.Top,
+                            "center" or "middle" or "c" or "m" => Drawing.TextAnchoringTypeValues.Center,
+                            "bottom" or "b" => Drawing.TextAnchoringTypeValues.Bottom,
+                            _ => throw new ArgumentException($"Invalid valign: {valignVal}. Use top/center/bottom")
+                        };
+                    }
                 }
 
                 // Position and size (in EMU, 1cm = 360000 EMU; or parse as cm/in)
@@ -2316,7 +2361,26 @@ public class PowerPointHandler : IDocumentHandler
                 isTitle ? new PlaceholderShape { Type = PlaceholderValues.Title } : new PlaceholderShape()
             )
         );
-        shape.ShapeProperties = new ShapeProperties();
+        var spPr = new ShapeProperties();
+        if (isTitle)
+        {
+            // Default title position: top-center area of standard 16:9 slide
+            spPr.Transform2D = new Drawing.Transform2D
+            {
+                Offset = new Drawing.Offset { X = 838200, Y = 365125 },    // ~2.33cm, ~1.01cm
+                Extents = new Drawing.Extents { Cx = 10515600, Cy = 1325563 } // ~29.21cm, ~3.68cm
+            };
+        }
+        else
+        {
+            // Default body/content position: below title
+            spPr.Transform2D = new Drawing.Transform2D
+            {
+                Offset = new Drawing.Offset { X = 838200, Y = 1825625 },   // ~2.33cm, ~5.07cm
+                Extents = new Drawing.Extents { Cx = 10515600, Cy = 4351338 } // ~29.21cm, ~12.09cm
+            };
+        }
+        shape.ShapeProperties = spPr;
         var body = new TextBody(
             new Drawing.BodyProperties(),
             new Drawing.ListStyle()
@@ -2834,7 +2898,16 @@ public class PowerPointHandler : IDocumentHandler
                 else
                     node.Format["margin"] = $"{FormatEmu(lIns ?? 91440)},{FormatEmu(tIns ?? 45720)},{FormatEmu(rIns ?? 91440)},{FormatEmu(bIns ?? 45720)}";
             }
+
+            // Vertical alignment
+            if (bodyPr.Anchor?.HasValue == true)
+                node.Format["valign"] = bodyPr.Anchor.InnerText;
         }
+
+        // Text alignment (from first paragraph)
+        var firstPara = shape.TextBody?.Elements<Drawing.Paragraph>().FirstOrDefault();
+        if (firstPara?.ParagraphProperties?.Alignment?.HasValue == true)
+            node.Format["align"] = firstPara.ParagraphProperties.Alignment.InnerText;
 
         // Count paragraphs regardless of depth
         if (shape.TextBody != null)
@@ -3200,6 +3273,18 @@ public class PowerPointHandler : IDocumentHandler
         {
             throw new ArgumentException("margin must be a single value or 4 comma-separated values (left,top,right,bottom)");
         }
+    }
+
+    private static Drawing.TextAlignmentTypeValues ParseTextAlignment(string value)
+    {
+        return value.ToLowerInvariant() switch
+        {
+            "left" or "l" => Drawing.TextAlignmentTypeValues.Left,
+            "center" or "c" => Drawing.TextAlignmentTypeValues.Center,
+            "right" or "r" => Drawing.TextAlignmentTypeValues.Right,
+            "justify" or "j" => Drawing.TextAlignmentTypeValues.Justified,
+            _ => throw new ArgumentException($"Invalid align: {value}. Use: left, center, right, justify")
+        };
     }
 
     private static long ParseEmu(string value)

@@ -643,6 +643,8 @@ Shape properties (/slide[N]/shape[M]) -- applies to all runs:
   fill       Hex RGB shape fill (e.g. 4472C4) or "none"
   preset     Shape geometry (e.g. roundRect, ellipse, rightArrow, diamond, star5)
   margin     Text padding inside shape (e.g. 0.5cm or left,top,right,bottom: 0.5cm,0.3cm,0.5cm,0.3cm)
+  align      Text horizontal alignment: left (l), center (c), right (r), justify (j) — applies to all paragraphs
+  valign     Text vertical alignment: top (t), center/middle (c/m), bottom (b)
   x          Horizontal position (EMU or cm/in/pt/px, e.g. 2cm)
   y          Vertical position (EMU or cm/in/pt/px, e.g. 3cm)
   width      Shape width (EMU or cm/in/pt/px, e.g. 10cm)
@@ -694,6 +696,7 @@ Types and properties:
   shape (textbox)  -- parent: /slide[N]
     text (supports \n for line breaks), name, font, size, bold, italic, color, fill,
     margin (text padding: 0.5cm or left,top,right,bottom),
+    align (left/center/right/justify), valign (top/center/bottom),
     preset (shape geometry: rect, roundRect, ellipse, triangle, diamond, pentagon, hexagon,
             star5, rightArrow, leftArrow, chevron, plus, heart, cloud, cube, can, line,
             callout, process, decision, smiley, frame, gear6, ...),
