@@ -623,4 +623,137 @@ public class PptxFunctionalTests : IDisposable
         var node = _handler.Get("/slide[1]/shape[1]");
         node.Text.Should().Be("persist anim");
     }
+
+    // ==================== Radial Gradient ====================
+
+    [Fact]
+    public void RadialGradient_Shape_Lifecycle()
+    {
+        // 1. Add slide + shape
+        _handler.Add("/", "slide", null, new() { ["title"] = "Gradient Test" });
+        _handler.Add("/slide[1]", "shape", null, new() { ["text"] = "Radial" });
+
+        // 2. Set radial gradient (blue→purple, top-right focus)
+        _handler.Set("/slide[1]/shape[1]", new() { ["gradient"] = "radial:1E90FF-4B0082-tr" });
+
+        // 3. Get + Verify
+        var node = _handler.Get("/slide[1]/shape[1]");
+        node.Format.Should().ContainKey("gradient");
+        var grad = (string)node.Format["gradient"];
+        grad.Should().StartWith("radial:");
+        grad.Should().Contain("1E90FF");
+        grad.Should().Contain("4B0082");
+        grad.Should().EndWith("tr");
+
+        // 4. Change to center focus
+        _handler.Set("/slide[1]/shape[1]", new() { ["gradient"] = "radial:FF0000-FFFF00-center" });
+        node = _handler.Get("/slide[1]/shape[1]");
+        ((string)node.Format["gradient"]).Should().Contain("center");
+
+        // 5. Persist + Verify
+        Reopen();
+        node = _handler.Get("/slide[1]/shape[1]");
+        ((string)node.Format["gradient"]).Should().StartWith("radial:");
+    }
+
+    [Fact]
+    public void RadialGradient_Background_Lifecycle()
+    {
+        // 1. Add slide
+        _handler.Add("/", "slide", null, new() { ["title"] = "BG Gradient" });
+
+        // 2. Set radial gradient as background
+        _handler.Set("/slide[1]", new() { ["background"] = "radial:4B0082-1E90FF-bl" });
+
+        // 3. Get + Verify
+        var node = _handler.Get("/slide[1]");
+        node.Format.Should().ContainKey("background");
+        var bg = (string)node.Format["background"];
+        bg.Should().StartWith("radial:");
+        bg.Should().Contain("bl");
+
+        // 4. Persist + Verify
+        Reopen();
+        node = _handler.Get("/slide[1]");
+        ((string)node.Format["background"]).Should().StartWith("radial:");
+    }
+
+    // ==================== Line Opacity ====================
+
+    [Fact]
+    public void LineOpacity_Lifecycle()
+    {
+        // 1. Add slide + shape with line
+        _handler.Add("/", "slide", null, new() { ["title"] = "Line Test" });
+        _handler.Add("/slide[1]", "shape", null, new() { ["text"] = "Bordered" });
+
+        // 2. Set line color + opacity
+        _handler.Set("/slide[1]/shape[1]", new()
+        {
+            ["line"] = "FFFFFF",
+            ["linewidth"] = "2pt",
+            ["lineopacity"] = "0.5"
+        });
+
+        // 3. Get + Verify
+        var node = _handler.Get("/slide[1]/shape[1]");
+        node.Format.Should().ContainKey("line");
+        ((string)node.Format["line"]).Should().Be("FFFFFF");
+        node.Format.Should().ContainKey("lineOpacity");
+        ((string)node.Format["lineOpacity"]).Should().Be("0.5");
+
+        // 4. Change opacity
+        _handler.Set("/slide[1]/shape[1]", new() { ["lineopacity"] = "0.3" });
+        node = _handler.Get("/slide[1]/shape[1]");
+        ((string)node.Format["lineOpacity"]).Should().Be("0.3");
+
+        // 5. Persist + Verify
+        Reopen();
+        node = _handler.Get("/slide[1]/shape[1]");
+        ((string)node.Format["lineOpacity"]).Should().Be("0.3");
+    }
+
+    // ==================== Shape Image Fill ====================
+
+    [Fact]
+    public void ShapeImageFill_Lifecycle()
+    {
+        // 1. Create a tiny test image
+        var imgPath = Path.Combine(Path.GetTempPath(), $"test_img_{Guid.NewGuid():N}.png");
+        try
+        {
+            // Write a minimal 1x1 PNG
+            var pngBytes = new byte[]
+            {
+                0x89,0x50,0x4E,0x47,0x0D,0x0A,0x1A,0x0A, // PNG signature
+                0x00,0x00,0x00,0x0D,0x49,0x48,0x44,0x52,  // IHDR chunk
+                0x00,0x00,0x00,0x01,0x00,0x00,0x00,0x01,0x08,0x02,0x00,0x00,0x00,0x90,0x77,0x53,0xDE,
+                0x00,0x00,0x00,0x0C,0x49,0x44,0x41,0x54,  // IDAT chunk
+                0x08,0xD7,0x63,0xF8,0xCF,0xC0,0x00,0x00,0x00,0x02,0x00,0x01,0xE2,0x21,0xBC,0x33,
+                0x00,0x00,0x00,0x00,0x49,0x45,0x4E,0x44,0xAE,0x42,0x60,0x82 // IEND chunk
+            };
+            File.WriteAllBytes(imgPath, pngBytes);
+
+            // 2. Add slide + shape
+            _handler.Add("/", "slide", null, new() { ["title"] = "Image Fill" });
+            _handler.Add("/slide[1]", "shape", null, new() { ["text"] = "Filled" });
+
+            // 3. Set image fill
+            _handler.Set("/slide[1]/shape[1]", new() { ["image"] = imgPath });
+
+            // 4. Get + Verify
+            var node = _handler.Get("/slide[1]/shape[1]");
+            node.Format.Should().ContainKey("image");
+            ((string)node.Format["image"]).Should().Be("true");
+
+            // 5. Persist + Verify
+            Reopen();
+            node = _handler.Get("/slide[1]/shape[1]");
+            node.Format.Should().ContainKey("image");
+        }
+        finally
+        {
+            if (File.Exists(imgPath)) File.Delete(imgPath);
+        }
+    }
 }
