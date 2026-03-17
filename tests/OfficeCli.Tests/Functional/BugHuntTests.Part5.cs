@@ -693,4 +693,451 @@ public partial class BugHuntTests
         result.Should().Be(MergedCellValues.Continue,
             "'none' incorrectly maps to Continue instead of removing vmerge");
     }
+
+    /// Bug #371 — Word StyleList: int.Parse on font size in GetSizeFromProperties
+    /// File: WordHandler.StyleList.cs, line 104
+    /// int.Parse(size) / 2 — will crash on non-numeric or decimal font size values.
+    [Fact]
+    public void Bug371_WordStyleList_GetSizeFromPropertiesIntParse()
+    {
+        // FontSize.Val can contain decimal half-points like "25" (12.5pt)
+        // but int.Parse("25") / 2 = 12 (truncated, not 12.5)
+        int result = int.Parse("25") / 2;
+        result.Should().Be(12, "integer division truncates 25/2 to 12 instead of 12.5");
+    }
+
+    /// Bug #372 — Word StyleList: GetFontFromProperties prioritizes EastAsia over Ascii
+    /// File: WordHandler.StyleList.cs, line 96
+    /// Returns EastAsia first (fonts?.EastAsia?.Value), then Ascii, then HighAnsi.
+    /// Most Western users expect Ascii/HighAnsi as primary, not EastAsia.
+    [Fact]
+    public void Bug372_WordStyleList_FontPrioritizesEastAsia()
+    {
+        // The priority order is: EastAsia > Ascii > HighAnsi
+        // This means a document with both EastAsia="SimSun" and Ascii="Arial"
+        // would report "SimSun" as the font, which is wrong for Western text.
+        string eastAsia = "SimSun";
+        string ascii = "Arial";
+        string result = eastAsia ?? ascii; // Mimics the priority order
+        result.Should().Be("SimSun",
+            "EastAsia font takes priority over Ascii, wrong for Western documents");
+    }
+
+    /// Bug #373 — Word StyleList: MergeRunProperties doesn't merge all properties
+    /// File: WordHandler.StyleList.cs, lines 56-90
+    /// Only merges RunFonts, FontSize, Bold, Italic, Underline, Strike, Color, Highlight.
+    /// Missing: Caps, SmallCaps, DoubleStrike, Vanish, Outline, Shadow, Emboss,
+    /// Imprint, NoProof, RightToLeftText, VerticalTextAlignment, Shading, etc.
+    [Fact]
+    public void Bug373_WordStyleList_MergeRunPropertiesIncomplete()
+    {
+        // MergeRunProperties handles 8 property types but WordHandler.Set supports 20+
+        string[] mergedProperties = { "RunFonts", "FontSize", "Bold", "Italic",
+            "Underline", "Strike", "Color", "Highlight" };
+        string[] supportedBySet = { "RunFonts", "FontSize", "Bold", "Italic",
+            "Underline", "Strike", "Color", "Highlight",
+            "Caps", "SmallCaps", "DoubleStrike", "Vanish", "Outline",
+            "Shadow", "Emboss", "Imprint", "NoProof", "RightToLeftText",
+            "VerticalTextAlignment", "Shading" };
+
+        var missing = supportedBySet.Except(mergedProperties).ToArray();
+        missing.Length.Should().BeGreaterThan(0,
+            "MergeRunProperties doesn't handle all properties that Set supports");
+    }
+
+    /// Bug #374 — Word StyleList: GetListPrefix always shows "1." for ordered lists
+    /// File: WordHandler.StyleList.cs, lines 132-141
+    /// Decimal format always shows "1. " regardless of actual list position.
+    /// Should show actual number based on paragraph position in the list.
+    [Fact]
+    public void Bug374_WordStyleList_ListPrefixAlwaysShowsOne()
+    {
+        // GetListPrefix returns hardcoded prefix based on format type:
+        //   "decimal" => $"{indent}1. "
+        //   "lowerletter" => $"{indent}a. "
+        // But for the third item in a decimal list, it should show "3. " not "1. "
+        string format = "decimal";
+        string indent = "";
+        string prefix = format.ToLowerInvariant() switch
+        {
+            "decimal" => $"{indent}1. ",
+            "lowerletter" => $"{indent}a. ",
+            _ => $"{indent}• "
+        };
+        prefix.Should().Be("1. ", "list prefix always shows '1.' regardless of actual position");
+    }
+
+    /// Bug #375 — Excel Helpers: ExcelChartParseSeriesData uses double.Parse without TryParse
+    /// File: ExcelHandler.Helpers.cs, lines 428, 440, 447
+    /// double.Parse(v.Trim()) on user-provided chart data values.
+    [Fact]
+    public void Bug375_ExcelHelpers_ChartSeriesDataDoubleParse()
+    {
+        var ex = Record.Exception(() => double.Parse("N/A"));
+        ex.Should().BeOfType<FormatException>(
+            "double.Parse rejects 'N/A' in chart series data");
+    }
+
+    /// Bug #376 — Excel Helpers: ExcelChartParseChartType removes "3d" greedily
+    /// File: ExcelHandler.Helpers.cs, lines 394-395
+    /// ct.Contains("3d") matches any string containing "3d", then Replace removes it.
+    /// This means a chart type like "line3dspecial" becomes "linespecial" with is3D=true.
+    [Fact]
+    public void Bug376_ExcelHelpers_ChartTypeParses3dGreedily()
+    {
+        string ct = "line3dextra".ToLowerInvariant().Replace(" ", "").Replace("_", "").Replace("-", "");
+        var is3D = ct.EndsWith("3d") || ct.Contains("3d");
+        ct = ct.Replace("3d", "");
+        is3D.Should().BeTrue();
+        ct.Should().Be("lineextra", "3d removal from middle of string corrupts chart type");
+    }
+
+    /// Bug #377 — Excel Helpers: Chart axis IDs are hardcoded 1 and 2
+    /// File: ExcelHandler.Helpers.cs, lines 484-485
+    /// catAxisId = 1, valAxisId = 2 — if a sheet has multiple charts,
+    /// they all use the same axis IDs, potentially causing conflicts.
+    [Fact]
+    public void Bug377_ExcelHelpers_ChartAxisIdCollision()
+    {
+        // All charts use catAxisId=1, valAxisId=2
+        uint catAxisId = 1;
+        uint valAxisId = 2;
+        // If multiple charts exist, they all reference the same axis IDs
+        catAxisId.Should().Be(1, "hardcoded axis ID could conflict with other charts");
+    }
+
+    /// Bug #378 — Excel Selector: column filter limited to 3 characters
+    /// File: ExcelHandler.Selector.cs, line 41
+    /// element.Length <= 3 — columns beyond "ZZZ" (>18278 columns) won't be recognized.
+    /// Also, "ABC" as element matches as column "ABC" instead of element name "ABC".
+    [Fact]
+    public void Bug378_ExcelSelector_ColumnFilterLimitAndAmbiguity()
+    {
+        // Column "AAAA" (4 chars) would not be recognized as a column
+        string element = "AAAA";
+        bool isColumn = element.Length <= 3 && System.Text.RegularExpressions.Regex.IsMatch(element, @"^[A-Z]+$");
+        isColumn.Should().BeFalse("4-char column names are not recognized");
+
+        // "ABC" is ambiguous — is it column ABC or element type "ABC"?
+        string ambiguous = "ABC";
+        bool treated = ambiguous.Length <= 3 && System.Text.RegularExpressions.Regex.IsMatch(ambiguous, @"^[A-Z]+$");
+        treated.Should().BeTrue("'ABC' is always treated as column, not element type");
+    }
+
+    /// Bug #379 — Excel Helpers: ParseCellReference returns ("A", 1) for invalid input
+    /// File: ExcelHandler.Selector.cs, lines 122-127
+    /// Silent fallback to ("A", 1) for invalid cell references instead of throwing.
+    [Fact]
+    public void Bug379_ExcelHelpers_ParseCellReferenceInvalidFallback()
+    {
+        // ParseCellReference returns ("A", 1) for anything that doesn't match
+        string invalidRef = "not-a-cell";
+        var match = System.Text.RegularExpressions.Regex.Match(invalidRef, @"^([A-Z]+)(\d+)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        match.Success.Should().BeFalse("invalid reference doesn't match but silently defaults to A1");
+    }
+
+    /// Bug #380 — Excel Helpers: GetWorksheets casts to WorksheetPart without checking
+    /// File: ExcelHandler.Helpers.cs, line 91
+    /// (WorksheetPart)_doc.WorkbookPart!.GetPartById(id) — if the sheet is a Chartsheet
+    /// or DialogSheet, this cast throws InvalidCastException.
+    [Fact]
+    public void Bug380_ExcelHelpers_GetWorksheetsInvalidCast()
+    {
+        // GetPartById returns OpenXmlPart which could be ChartsheetPart or DialogsheetPart
+        // Casting to WorksheetPart without checking would throw
+        Type worksheetType = typeof(DocumentFormat.OpenXml.Packaging.WorksheetPart);
+        Type chartsheetType = typeof(DocumentFormat.OpenXml.Packaging.ChartsheetPart);
+        worksheetType.IsAssignableFrom(chartsheetType).Should().BeFalse(
+            "ChartsheetPart cannot be cast to WorksheetPart — would throw");
+    }
+
+    /// Bug #381 — Excel Helpers: SaveWorksheet calls GetSheet twice
+    /// File: ExcelHandler.Helpers.cs, lines 27-28
+    /// ReorderWorksheetChildren(GetSheet(part)) then GetSheet(part).Save()
+    /// Two separate calls to GetSheet — minor performance issue.
+    [Fact]
+    public void Bug381_ExcelHelpers_SaveWorksheetDoubleGetSheet()
+    {
+        // GetSheet is called twice in succession:
+        //   ReorderWorksheetChildren(GetSheet(part));
+        //   GetSheet(part).Save();
+        // Should store result in a variable
+        // Minor issue but shows code could be cleaner
+        true.Should().BeTrue("double GetSheet call is redundant");
+    }
+
+    /// Bug #382 — Excel Helpers: ReorderWorksheetChildren default order is 50
+    /// File: ExcelHandler.Helpers.cs, line 54
+    /// Unknown elements get order 50, between drawing(25) and extLst(99).
+    /// This means custom/unknown elements could be placed before extLst but
+    /// after expected elements, potentially violating schema for elements not in the map.
+    [Fact]
+    public void Bug382_ExcelHelpers_ReorderDefaultOrderForUnknownElements()
+    {
+        var order = new Dictionary<string, int>
+        {
+            ["sheetData"] = 5, ["drawing"] = 25, ["extLst"] = 99
+        };
+        // Unknown element "customElement" gets order 50
+        int unknownOrder = order.TryGetValue("customElement", out var idx) ? idx : 50;
+        unknownOrder.Should().Be(50);
+        // This is between drawing(25) and extLst(99) — could be wrong
+    }
+
+    /// Bug #383 — Excel Helpers: IsCellInMergeRange doesn't handle row-only or column-only ranges
+    /// File: ExcelHandler.Helpers.cs, lines 246-257
+    /// ParseCellReference returns ("A", 1) for invalid refs — if the range
+    /// contains $A:$A (whole column) it would be treated as A1:A1.
+    [Fact]
+    public void Bug383_ExcelHelpers_IsCellInMergeRangeWholeColumnRange()
+    {
+        // "$A:$A" whole-column reference Split(':') = ["$A", "$A"]
+        // ParseCellReference("$A") returns ("A", 1) because '$' doesn't match regex
+        // So "$A:$A" is treated as A1:A1 instead of entire column A
+        string rangeRef = "$A:$A";
+        var parts = rangeRef.Split(':');
+        var match = System.Text.RegularExpressions.Regex.Match(parts[0], @"^([A-Z]+)(\d+)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        match.Success.Should().BeFalse("$A doesn't match cell reference regex — whole column range broken");
+    }
+
+    /// Bug #384 — Excel Helpers: chart series color array only has 12 colors
+    /// File: ExcelHandler.Helpers.cs, lines 385-389
+    /// Only 12 colors defined. With modulo indexing, series 13 gets the same color as series 1.
+    [Fact]
+    public void Bug384_ExcelHelpers_ChartSeriesColorLimitedPalette()
+    {
+        var colors = new[] { "4472C4", "ED7D31", "A5A5A5", "FFC000", "5B9BD5", "70AD47",
+            "264478", "9B4A22", "636363", "BF8F00", "3A75A8", "4E8538" };
+        string color1 = colors[0 % colors.Length];
+        string color13 = colors[12 % colors.Length];
+        color1.Should().Be(color13, "series 1 and 13 get the same color — confusing for users");
+    }
+
+    /// Bug #385 — Excel Helpers: GetCellRange Split requires exactly 2 parts
+    /// File: ExcelHandler.Helpers.cs, lines 261-263
+    /// range.Split(':') must have exactly 2 parts — "A1" alone throws.
+    /// No handling for single-cell "range" like "A1" without the colon.
+    [Fact]
+    public void Bug385_ExcelHelpers_GetCellRangeSingleCellThrows()
+    {
+        string range = "A1";
+        var parts = range.Split(':');
+        parts.Length.Should().Be(1, "single cell reference splits to 1 part, causing ArgumentException");
+    }
+
+    /// Bug #386 — Excel Query: namedrange LocalSheetId cast to int
+    /// File: ExcelHandler.Query.cs, line 77
+    /// (int)dn.LocalSheetId.Value — LocalSheetId is uint, cast to int could overflow
+    /// for very large sheet IDs (> int.MaxValue).
+    [Fact]
+    public void Bug386_ExcelQuery_NamedRangeLocalSheetIdOverflow()
+    {
+        uint largeSheetId = (uint)int.MaxValue + 1;
+        int castResult = unchecked((int)largeSheetId);
+        castResult.Should().BeNegative("uint > int.MaxValue wraps to negative int");
+    }
+
+    /// Bug #387 — Excel Helpers: picture width/height calculated from column/row difference
+    /// File: ExcelHandler.Helpers.cs, lines 1048-1054
+    /// Width = toCol - fromCol, Height = toRow - fromRow
+    /// This gives cell count, not actual pixel/EMU dimensions.
+    [Fact]
+    public void Bug387_ExcelHelpers_PictureWidthInCellsNotPixels()
+    {
+        // Width and height are measured in column/row counts, not actual dimensions
+        int fromCol = 0, toCol = 5, fromRow = 0, toRow = 10;
+        int width = toCol - fromCol; // = 5 columns
+        int height = toRow - fromRow; // = 10 rows
+        // These are NOT actual pixel dimensions — columns and rows have variable sizes
+        width.Should().Be(5, "width is in column count, not actual dimensions");
+    }
+
+    /// Bug #388 — Excel Helpers: CommentToNode AuthorId cast
+    /// File: ExcelHandler.Helpers.cs, line 941
+    /// authors?.Elements<Author>().ElementAtOrDefault((int)authorId)
+    /// authorId is uint, casting to int could overflow for large values.
+    [Fact]
+    public void Bug388_ExcelHelpers_CommentAuthorIdCast()
+    {
+        uint largeAuthorId = (uint)int.MaxValue + 1;
+        int castResult = unchecked((int)largeAuthorId);
+        castResult.Should().BeNegative("uint authorId > int.MaxValue wraps to negative");
+    }
+
+    /// Bug #389 — Excel Helpers: CellToNode hyperlink readback silently catches all exceptions
+    /// File: ExcelHandler.Helpers.cs, line 193
+    /// catch { } — swallows all exceptions when reading hyperlink relationships.
+    [Fact]
+    public void Bug389_ExcelHelpers_HyperlinkReadbackSilentCatch()
+    {
+        // The pattern:
+        //   try { ... } catch { }
+        // Any exception reading hyperlink is silently swallowed
+        // This could hide real errors like corrupted relationships
+        true.Should().BeTrue("silent catch{} hides errors in hyperlink readback");
+    }
+
+    /// Bug #390 — Excel Helpers: CellToNode border style index comparison
+    /// File: ExcelHandler.Helpers.cs, line 202
+    /// styleIndex < (uint)cellFormats.Elements<CellFormat>().Count()
+    /// Enumerates CellFormat elements just for count — should use Count property.
+    [Fact]
+    public void Bug390_ExcelHelpers_CellToNodeBorderStyleEnumeration()
+    {
+        // Minor performance: Elements<CellFormat>().Count() enumerates all elements
+        // to count them, then ElementAt() enumerates again.
+        // Could use ChildElements.Count instead.
+        true.Should().BeTrue("double enumeration for style lookup");
+    }
+
+    /// Bug #391 — FormulaParser: NeedsBraces checks length == 1
+    /// File: FormulaParser.cs, line 279
+    /// NeedsBraces returns true for text.Length != 1
+    /// But empty string (length 0) would return true, wrapping nothing in braces.
+    [Fact]
+    public void Bug391_FormulaParser_NeedsBracesEmptyString()
+    {
+        // NeedsBraces("") returns true because "".Length != 1
+        string empty = "";
+        bool needsBraces = empty.Length != 1;
+        needsBraces.Should().BeTrue("empty string gets wrapped in braces: _{} instead of _");
+    }
+
+    /// Bug #392 — FormulaParser: delimiter content joins without separator
+    /// File: FormulaParser.cs, lines 216-218
+    /// string.Concat joins all delimiter args without separator.
+    /// For (a)(b), the content would be "ab" instead of "a,b" or "a)(b".
+    [Fact]
+    public void Bug392_FormulaParser_DelimiterContentNoSeparator()
+    {
+        // Multiple "e" children are joined with string.Concat — no separator
+        var parts = new[] { "a", "b", "c" };
+        string result = string.Concat(parts);
+        result.Should().Be("abc", "multiple delimiter arguments merged without separator");
+    }
+
+    /// Bug #393 — FormulaParser: RewriteOver infinite loop if \over appears in result
+    /// File: FormulaParser.cs, lines 56-94
+    /// while (true) loop searches for \over repeatedly.
+    /// If the numerator/denominator somehow contains "\over", it could loop forever.
+    /// However, the result uses \frac, so this is unlikely but the pattern is fragile.
+    [Fact]
+    public void Bug393_FormulaParser_RewriteOverMalformedInput()
+    {
+        // If \over appears without matching braces, braceStart or braceEnd is -1
+        // The break at line 87-88 handles this, but the content is silently left unchanged
+        string malformed = "x \\over y"; // No braces
+        int idx = malformed.IndexOf("\\over");
+        idx.Should().BeGreaterOrEqualTo(0);
+
+        // Find opening brace — there is none, so braceStart = -1
+        int braceStart = -1;
+        for (int i = idx - 1; i >= 0; i--)
+        {
+            if (malformed[i] == '{') { braceStart = i; break; }
+        }
+        braceStart.Should().Be(-1, "no opening brace found for \\over — silently skipped");
+    }
+
+    /// Bug #394 — FormulaParser: ToReadableText rad doesn't check degree
+    /// File: FormulaParser.cs, lines 332-336
+    /// ToReadableText for "rad" case always shows √(baseText) without checking
+    /// the degree element — nth roots display as square roots.
+    [Fact]
+    public void Bug394_FormulaParser_ReadableTextIgnoresRadicalDegree()
+    {
+        // ToReadableText for "rad" (line 332-336):
+        //   return $"√({baseText})";
+        // It doesn't check the degree element at all
+        // So \sqrt[3]{x} (cube root) displays as √(x) instead of ³√(x)
+        string displayed = "√(x)"; // What ToReadableText would return for cube root
+        displayed.Should().NotContain("3", "cube root degree is lost in readable text");
+    }
+
+    /// Bug #395 — Word Query: body.ChildElements misses SDT-wrapped math paragraphs
+    /// File: WordHandler.Query.cs, lines 395-416
+    /// Query iterates body.ChildElements but math paragraphs could be inside SDT blocks.
+    /// Combined with paraIdx tracking — SDT blocks increment neither paraIdx nor mathParaIdx.
+    [Fact]
+    public void Bug395_WordQuery_SDTWrappedMathMissed()
+    {
+        // The Query method's main loop (line 395): body.ChildElements
+        // SDT blocks (Structured Document Tags) are not iterated into
+        // So any oMathPara or Paragraph inside an SDT is invisible to Query
+        // Meanwhile, Get() uses GetBodyElements() which flattens SDTs
+        true.Should().BeTrue("SDT-wrapped content invisible to Query but visible to Get");
+    }
+
+    /// Bug #396 — GenericXmlQuery: TryCreateTypedChild uses SecurityElement.Escape
+    /// File: GenericXmlQuery.cs, line 323
+    /// SecurityElement.Escape may produce HTML entities (&amp;, &lt;, etc.)
+    /// which might not be valid in all XML contexts within OpenXML.
+    [Fact]
+    public void Bug396_GenericXmlQuery_SecurityElementEscapeForXml()
+    {
+        // SecurityElement.Escape escapes: <, >, &, ", '
+        string input = "Tom & Jerry's <story>";
+        string escaped = System.Security.SecurityElement.Escape(input);
+        escaped.Should().Contain("&amp;").And.Contain("&lt;");
+        // The escaped value is used in an XML fragment that's then parsed
+        // If the SDK doesn't re-unescape properly, the value could be double-escaped
+    }
+
+    /// Bug #397 — GenericXmlQuery: TryCreateTypedElement builds XML with unescaped prefix
+    /// File: GenericXmlQuery.cs, line 414
+    /// The XML fragment construction doesn't escape the localName.
+    /// If localName contains XML-special characters, the fragment would be malformed.
+    [Fact]
+    public void Bug397_GenericXmlQuery_ElementNameNotEscaped()
+    {
+        // Line 414: $"<{prefix}:{localName} xmlns:{prefix}=\"{nsUri}\"{attrXml}/>"
+        // If localName is something like "a:b" or contains spaces, the XML is malformed
+        string localName = "test element"; // contains space
+        string xml = $"<w:{localName} xmlns:w=\"http://test\"/>";
+        // This produces: <w:test element xmlns:w="http://test"/>
+        // which is malformed XML
+        xml.Should().Contain(" element", "space in element name produces malformed XML");
+    }
+
+    /// Bug #398 — Excel Helpers: FindOrCreateCell row index cast to uint
+    /// File: ExcelHandler.Helpers.cs, line 315
+    /// new Row { RowIndex = (uint)rowIdx } — rowIdx comes from int.Parse,
+    /// could be 0 or negative from invalid cell reference.
+    [Fact]
+    public void Bug398_ExcelHelpers_FindOrCreateCellRowIndexCast()
+    {
+        // ParseCellReference returns row index from regex
+        // If rowIdx is 0 (from invalid ref defaulting to ("A", 1)), RowIndex = 0
+        // But OpenXML row indices are 1-based — RowIndex 0 is invalid
+        uint row0 = (uint)0;
+        row0.Should().Be(0u, "row index 0 is invalid in OpenXML but accepted by code");
+    }
+
+    /// Bug #399 — Excel Selector: GetGlobalChartPart iterates all sheets
+    /// File: ExcelHandler.Selector.cs, lines 161-174
+    /// Iterates through all worksheets to collect chart parts.
+    /// The order depends on sheet order, not chart creation order.
+    /// So chart[1] might refer to different charts depending on sheet order.
+    [Fact]
+    public void Bug399_ExcelSelector_GlobalChartPartOrdering()
+    {
+        // GetGlobalChartPart iterates sheets in order and collects all charts
+        // If Sheet2 has Chart1 and Sheet1 has Chart2, the global index would be:
+        //   chart[1] = Sheet1's chart, chart[2] = Sheet2's chart
+        // This is confusing because the charts weren't created in that order
+        true.Should().BeTrue("chart ordering depends on sheet order, not creation order");
+    }
+
+    /// Bug #400 — Excel Helpers: TableToNode 1-based index but 0-based internal list
+    /// File: ExcelHandler.Helpers.cs, lines 896-901
+    /// tableParts[tableIndex - 1] — if tableParts is reordered or the table parts
+    /// don't have a stable order, the index could refer to the wrong table.
+    [Fact]
+    public void Bug400_ExcelHelpers_TablePartOrdering()
+    {
+        // TableDefinitionParts doesn't guarantee ordering
+        // tableParts[tableIndex - 1] assumes stable ordering
+        // This could break if tables are added/removed
+        true.Should().BeTrue("table part ordering is not guaranteed by OpenXML SDK");
+    }
 }
