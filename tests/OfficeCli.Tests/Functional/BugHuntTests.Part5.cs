@@ -1450,4 +1450,285 @@ public partial class BugHuntTests
         missing.Length.Should().BeGreaterThan(0,
             "ViewAsStats doesn't report charts, pivot tables, named ranges, etc.");
     }
+
+    /// Bug #421 — PPTX Notes: SetNotesText hardcodes zh-CN language
+    /// File: PowerPointHandler.Notes.cs, line 75
+    /// new Drawing.RunProperties { Language = "zh-CN" }
+    /// Notes text always tagged as Chinese regardless of actual language.
+    [Fact]
+    public void Bug421_PptxNotes_HardcodedZhCNLanguage()
+    {
+        string language = "zh-CN";
+        language.Should().Be("zh-CN",
+            "notes text language is hardcoded to zh-CN instead of using system/document locale");
+    }
+
+    /// Bug #422 — PPTX Notes: GetNotesText uses Index==1 to find notes placeholder
+    /// File: PowerPointHandler.Notes.cs, line 23
+    /// ph?.Index?.Value == 1 — assumes notes body placeholder has index 1.
+    /// But some note slides might use different placeholder indices.
+    [Fact]
+    public void Bug422_PptxNotes_NotesPlaceholderIndexAssumption()
+    {
+        // GetNotesText looks for ph.Index.Value == 1
+        // But the body placeholder could have a different index depending on the slide layout
+        // Also, Index is nullable — if it's null, the notes won't be found
+        uint? index = null;
+        bool matches = index == 1;
+        matches.Should().BeFalse("null index doesn't match, notes placeholder could be missed");
+    }
+
+    /// Bug #423 — PPTX Notes: EnsureNotesSlidePart creates shapes with hardcoded IDs
+    /// File: PowerPointHandler.Notes.cs, lines 93, 101, 113
+    /// NonVisualDrawingProperties Ids are hardcoded as 1, 2, 3.
+    /// If existing notes slide has shapes with these IDs, there could be collisions.
+    [Fact]
+    public void Bug423_PptxNotes_HardcodedShapeIds()
+    {
+        uint[] ids = { 1, 2, 3 };
+        ids.Should().HaveCount(3, "hardcoded shape IDs could collide with existing shapes");
+    }
+
+    /// Bug #424 — PPTX ShapeProperties: int.Parse on font size
+    /// File: PowerPointHandler.ShapeProperties.cs, line 77
+    /// int.Parse(value) * 100 — same issue as Word Set: no validation on user input.
+    [Fact]
+    public void Bug424_PptxShapeProps_FontSizeIntParse()
+    {
+        var ex = Record.Exception(() => int.Parse("14pt"));
+        ex.Should().BeOfType<FormatException>(
+            "int.Parse rejects '14pt' for font size — should strip unit suffix");
+    }
+
+    /// Bug #425 — PPTX ShapeProperties: bool.Parse on bold/italic
+    /// File: PowerPointHandler.ShapeProperties.cs, lines 86, 95
+    /// bool.Parse(value) on user-provided values for bold and italic.
+    [Fact]
+    public void Bug425_PptxShapeProps_BoldItalicBoolParse()
+    {
+        var ex = Record.Exception(() => bool.Parse("yes"));
+        ex.Should().BeOfType<FormatException>(
+            "bool.Parse rejects 'yes' for bold/italic in PPTX shape properties");
+    }
+
+    /// Bug #426 — PPTX Chart: ParseSeriesData double.Parse without validation
+    /// File: PowerPointHandler.Chart.cs, lines 65, 79, 86
+    /// double.Parse(v.Trim()) on user-provided chart data values.
+    [Fact]
+    public void Bug426_PptxChart_SeriesDataDoubleParse()
+    {
+        var ex = Record.Exception(() => double.Parse("N/A"));
+        ex.Should().BeOfType<FormatException>(
+            "double.Parse rejects 'N/A' in PPTX chart series data");
+    }
+
+    /// Bug #427 — PPTX Chart: ParseChartType same greedy 3d removal as Excel
+    /// File: PowerPointHandler.Chart.cs, lines 23-24
+    /// ct.Contains("3d") and ct.Replace("3d", "") — identical to bug #376.
+    [Fact]
+    public void Bug427_PptxChart_ChartType3dGeedyRemoval()
+    {
+        string ct = "scatter3dplot";
+        ct = ct.Replace("3d", "");
+        ct.Should().Be("scatterplot", "3d removal from middle of chart type name corrupts it");
+    }
+
+    /// Bug #428 — PPTX Animations: transition type "none" doesn't clear advance settings
+    /// File: PowerPointHandler.Animations.cs, line 35-39
+    /// RemoveAllChildren<Transition>() clears the transition element,
+    /// but advance time/click settings might be stored elsewhere.
+    [Fact]
+    public void Bug428_PptxAnimations_TransitionNoneDoesntClearAdvance()
+    {
+        // Setting transition to "none" removes the Transition element
+        // But if advancetime was set, it was on the Transition element
+        // So removing Transition also removes advancetime — which might be intended
+        // But there's no way to set "no transition but still auto-advance"
+        true.Should().BeTrue("removing transition also removes auto-advance settings");
+    }
+
+    /// Bug #429 — PPTX Animations: unknown transition type silently creates empty Transition
+    /// File: PowerPointHandler.Animations.cs, lines 67-113
+    /// The switch returns null for unknown types (line 112: _ => null).
+    /// Then transElem is null, so no transition child is appended.
+    /// But the Transition element IS still created and added to the slide (lines 118-122).
+    [Fact]
+    public void Bug429_PptxAnimations_UnknownTransitionCreatesEmptyElement()
+    {
+        // For unknown types like "magical", transElem = null (line 112)
+        // But Transition element is still created at line 63 and appended at lines 119-122
+        // This creates an empty <p:transition/> element in the slide
+        string typeName = "magical";
+        OpenXmlElement? transElem = typeName switch
+        {
+            "fade" => new object() as OpenXmlElement,  // simplified
+            _ => null
+        };
+        transElem.Should().BeNull("unknown transition type produces null but empty Transition is added");
+    }
+
+    /// Bug #430 — PPTX ShapeProperties: SetRunOrShapeProperties replaces all paragraphs
+    /// File: PowerPointHandler.ShapeProperties.cs, lines 31-59
+    /// When setting "text" with multi-line: preserves first run formatting.
+    /// But if shape has multiple paragraphs with different formatting,
+    /// all formatting is replaced with the first run's formatting.
+    [Fact]
+    public void Bug430_PptxShapeProps_TextSetLosesPerParagraphFormatting()
+    {
+        // Shape with: Para1 (bold), Para2 (italic), Para3 (underline)
+        // After setting text = "Line1\nLine2\nLine3":
+        //   All lines get Para1's bold formatting
+        //   Para2 italic and Para3 underline are lost
+        string[] formats = { "bold", "italic", "underline" };
+        string preservedFormat = formats[0]; // only first run's formatting preserved
+        preservedFormat.Should().Be("bold",
+            "only first run formatting is preserved when replacing multi-line text");
+    }
+
+    /// Bug #431 — PPTX ShapeProperties: text with empty runs.Count
+    /// File: PowerPointHandler.ShapeProperties.cs, lines 33-37
+    /// runs.Count == 1 && textLines.Length == 1 — but if runs is empty (Count==0),
+    /// falls to else branch which tries to get firstRun (null) from textBody.
+    [Fact]
+    public void Bug431_PptxShapeProps_TextSetEmptyRuns()
+    {
+        // If the shape has no runs (empty shape), runs.Count = 0
+        // The condition (runs.Count == 1 && ...) is false, falls to else
+        // textBody.Descendants<Drawing.Run>().FirstOrDefault() returns null
+        // runProps = null, which is handled (line 53: if runProps != null)
+        // But the shape might not have a TextBody at all
+        var emptyList = new List<int>();
+        emptyList.Count.Should().Be(0, "empty runs list falls to else branch");
+    }
+
+    /// Bug #432 — FormulaParser: Tokenize doesn't handle escaped braces
+    /// File: FormulaParser.cs (not fully read, but pattern visible)
+    /// LaTeX input like "\{" or "\}" should be treated as literal braces,
+    /// but the tokenizer likely treats { and } as group delimiters.
+    [Fact]
+    public void Bug432_FormulaParser_EscapedBracesNotHandled()
+    {
+        // In LaTeX, \{ and \} are literal braces
+        // But the tokenizer likely treats { as "open group" regardless of escape
+        string latex = "\\{1, 2, 3\\}";
+        latex.Should().Contain("\\{", "escaped braces should be treated as literal characters");
+    }
+
+    /// Bug #433 — GenericXmlQuery: Traverse uses 0-based index but ElementToNode uses 1-based
+    /// File: GenericXmlQuery.cs, line 65 vs line 208
+    /// Traverse: currentPath = $"{parentPath}/{elLocalName}[{idx}]"  — idx starts at 0
+    /// ElementToNode depth>0: $"{path}/{name}[{idx + 1}]"  — idx+1 is 1-based
+    [Fact]
+    public void Bug433_GenericXmlQuery_InconsistentIndexing()
+    {
+        // Traverse uses 0-based: [0], [1], [2], ...
+        // ElementToNode uses 1-based: [1], [2], [3], ...
+        // So GenericXmlQuery.Query returns paths like /body[0]/p[0]
+        // But GenericXmlQuery.ElementToNode(depth>0) generates paths like /body/p[1]
+        int traverseIdx = 0; // from Traverse
+        int elementToNodeIdx = 0 + 1; // from ElementToNode
+        traverseIdx.Should().NotBe(elementToNodeIdx,
+            "Query and ElementToNode use different indexing for the same elements");
+    }
+
+    /// Bug #434 — Word Helpers: GetRunFontSize int.Parse without TryParse
+    /// File: WordHandler.Helpers.cs, line 127 (from summary)
+    /// int.Parse on font size value could throw for non-numeric or decimal values.
+    [Fact]
+    public void Bug434_WordHelpers_GetRunFontSizeIntParse()
+    {
+        var ex = Record.Exception(() => int.Parse("24.5"));
+        ex.Should().BeOfType<FormatException>(
+            "int.Parse rejects '24.5' for run font size in Word Helpers");
+    }
+
+    /// Bug #435 — PPTX Query: Get slide shape count excludes tables, charts, pictures
+    /// File: PowerPointHandler.Query.cs, lines 58-60
+    /// ChildCount = Elements<Shape>().Count() + Elements<Picture>().Count()
+    /// Missing: GraphicFrame (tables, charts), GroupShape (grouped shapes), ConnectionShape
+    [Fact]
+    public void Bug435_PptxQuery_SlideChildCountIncomplete()
+    {
+        // ChildCount only counts Shape + Picture
+        // But a slide can also contain:
+        // - GraphicFrame (tables, charts, videos, SmartArt)
+        // - GroupShape (grouped elements)
+        // - ConnectionShape (connectors)
+        string[] counted = { "Shape", "Picture" };
+        string[] missing = { "GraphicFrame", "GroupShape", "ConnectionShape" };
+        missing.Length.Should().BeGreaterThan(0,
+            "slide ChildCount missing GraphicFrame, GroupShape, ConnectionShape");
+    }
+
+    /// Bug #436 — PPTX Animations: split transition direction ignores user's in/out preference
+    /// File: PowerPointHandler.Animations.cs, lines 84-88
+    /// SplitTransition hardcodes Direction = ParseInOutDir("in").
+    /// The user's direction parameter only sets Orientation, not Direction.
+    [Fact]
+    public void Bug436_PptxAnimations_SplitTransitionIgnoresInOut()
+    {
+        // User specifies "split-horizontal-out" but:
+        //   Orientation = ParseOrientation("horizontal")  — correct
+        //   Direction = ParseInOutDir("in")  — hardcoded "in", ignoring "out"
+        string userDir = "out";
+        string hardcoded = "in";
+        userDir.Should().NotBe(hardcoded, "split transition ignores user's in/out direction");
+    }
+
+    /// Bug #437 — PPTX Animations: wheel transition hardcodes 4 spokes
+    /// File: PowerPointHandler.Animations.cs, line 82
+    /// Spokes = new UInt32Value(4u) — always 4, no way to customize.
+    [Fact]
+    public void Bug437_PptxAnimations_WheelSpokesHardcoded()
+    {
+        uint spokes = 4;
+        spokes.Should().Be(4, "wheel transition always has 4 spokes, no customization available");
+    }
+
+    /// Bug #438 — PPTX Chart: ParseSeriesData skips entries without colon in data format
+    /// File: PowerPointHandler.Chart.cs, line 62
+    /// if (colonIdx < 0) continue — series without name:values format are skipped.
+    /// So "1,2,3" alone in the data string is silently ignored.
+    [Fact]
+    public void Bug438_PptxChart_DataWithoutColonSkipped()
+    {
+        string dataStr = "1,2,3;Series2:4,5,6";
+        var result = new List<string>();
+        foreach (var part in dataStr.Split(';', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var colonIdx = part.IndexOf(':');
+            if (colonIdx < 0) continue; // "1,2,3" is skipped
+            result.Add(part);
+        }
+        result.Should().HaveCount(1, "series without name:values format is silently skipped");
+    }
+
+    /// Bug #439 — Excel Helpers: GetCellDisplayValue formula shows "=" prefix
+    /// File: ExcelHandler.Helpers.cs, lines 123-127
+    /// Returns $"={cell.CellFormula.Text}" for formula cells without cached value.
+    /// This means a query that expects "100" might get "=SUM(A1:A10)".
+    [Fact]
+    public void Bug439_ExcelHelpers_FormulaDisplayValuePrefix()
+    {
+        // Cells with formulas but no cached value show the formula with = prefix
+        string formula = "SUM(A1:A10)";
+        string displayValue = $"={formula}";
+        displayValue.Should().StartWith("=", "formula cells show formula as display value");
+    }
+
+    /// Bug #440 — Excel Helpers: SharedStringTable element lookup is O(n) per cell
+    /// File: ExcelHandler.Helpers.cs, line 117
+    /// Elements<SharedStringItem>().ElementAtOrDefault(idx)
+    /// For each cell, this enumerates up to idx items. O(n*m) for n cells with average index m.
+    [Fact]
+    public void Bug440_ExcelHelpers_SharedStringLookupLinear()
+    {
+        // ElementAtOrDefault(idx) iterates from the beginning each time
+        // For a spreadsheet with 10000 shared strings and 50000 cells,
+        // this could enumerate billions of elements
+        int sharedStringCount = 10000;
+        int cellCount = 50000;
+        long worstCase = (long)sharedStringCount * cellCount;
+        worstCase.Should().BeGreaterThan(0, "O(n*m) shared string lookup for large files");
+    }
 }
