@@ -94,11 +94,18 @@ Python 代码 → 库 API → lxml (XML操作) → .zip 打包 → Office 文件
 
 1. **生态成熟度**: 新项目 (v1.0.3, 36 commits)，Python 库有 10+ 年历史
 2. **社区规模**: Python 库有数十万用户和丰富的 StackOverflow 答案
-3. **非 Python 原生**: 不能 `import officecli`，无法在 Python 代码中直接集成
-4. **PyPI 下载量差距巨大**: openpyxl 月下载 2 亿次 vs OfficeCli 作为新项目几乎为零
-5. **文档和教程**: Python 库有大量第三方教程、博客、视频
-6. **模板支持**: 不如 python-docx-template 等专门的模板引擎
-7. **数据分析集成**: 无法像 openpyxl 那样与 pandas / numpy / matplotlib 无缝集成
+3. **PyPI 下载量差距巨大**: openpyxl 月下载 2 亿次 vs OfficeCli 作为新项目几乎为零
+4. **文档和教程**: Python 库有大量第三方教程、博客、视频
+5. **模板支持**: 不如 python-docx-template 等专门的模板引擎
+
+> **注意**: OfficeCli 虽然不是 Python 原生库，但 Python 可以通过 `subprocess` 轻松调用，
+> 且 JSON 输出天然适合 `json.loads()` 解析，集成成本很低：
+> ```python
+> import subprocess, json
+> result = subprocess.run(["officecli", "text", "report.docx", "--json"], capture_output=True, text=True)
+> data = json.loads(result.stdout)  # 直接得到结构化数据
+> ```
+> 相比之下，Python 库返回的是需要逐层遍历的对象树，反而更复杂。
 
 ### Python 库的优势
 
@@ -125,7 +132,7 @@ Python 代码 → 库 API → lxml (XML操作) → .zip 打包 → Office 文件
 |------|----------|-------------|-------------|---------------|
 | 功能完整度 | 8 | 7 | 6 | **9** |
 | 格式覆盖广度 | 3 | 3 | 3 | **10** |
-| 易用性 (Python开发者) | 9 | 9 | 8 | 5 |
+| 易用性 (Python开发者) | 9 | 9 | 8 | **7** |
 | 易用性 (AI Agent) | 3 | 3 | 3 | **10** |
 | 社区与生态 | 10 | 9 | 8 | 2 |
 | 部署便利性 | 5 | 5 | 5 | **10** |
@@ -141,8 +148,8 @@ Python 代码 → 库 API → lxml (XML操作) → .zip 打包 → Office 文件
 |------|-----|------|
 | 🥇 1 | openpyxl | Python 生态最强 Excel 库，与 pandas 集成 |
 | 🥈 2 | python-docx | Word 自动化的事实标准 |
-| 🥉 3 | python-pptx | PPT 领域唯一选择 |
-| 4 | OfficeCli | 非 Python 原生，集成成本高 |
+| 🥉 3 | **OfficeCli** | **subprocess 调用简单，JSON 输出比对象树更易解析，且三合一免装多个库** |
+| 4 | python-pptx | PPT 领域唯一选择但维护停滞，社区已 fork python-pptx-ng |
 
 **场景二：AI Agent / LLM 工具调用**
 
@@ -182,6 +189,8 @@ Python 代码 → 库 API → lxml (XML操作) → .zip 打包 → Office 文件
 | **核心劣势** | 三个库各自为政、维护放缓 | 新项目、社区尚小 |
 | **综合定位** | 传统 Office 自动化的事实标准 | AI 时代 Office 操作的新范式 |
 
-**OfficeCli 在 AI Agent 场景下排名第一，在传统 Python 开发场景下排名第四。**
+**OfficeCli 在 AI Agent、部署、功能全面性三个场景排名第一，在传统 Python 开发场景排名第三。**
 
-如果以「单一工具做所有事」的标准来衡量，OfficeCli 是唯一的全能选手；但如果以「用户基数和生态成熟度」来衡量，Python 三件套仍然遥遥领先。OfficeCli 的定位清晰——它不是要取代 Python 库，而是为 AI Agent 时代提供一个更好的选择。
+Python 通过 `subprocess` 调用 OfficeCli 非常简单，JSON 输出天然适合 `json.loads()` 解析，集成成本远低于预期。考虑到 python-pptx 已停止维护、openpyxl 内存占用极高（50MB 文件需 2.5GB 内存）、三个库 API 各不相同需要分别学习，OfficeCli 的「三合一 + JSON 输出 + 零依赖」在 Python 场景中同样具有竞争力。
+
+OfficeCli 不是要取代 Python 库，而是提供了一个跨语言、跨场景的更好选择——Python 开发者同样是受益者。
