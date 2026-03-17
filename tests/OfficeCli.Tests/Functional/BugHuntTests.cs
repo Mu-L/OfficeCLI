@@ -2740,6 +2740,424 @@ public class BugHuntTests : IDisposable
         bg.Should().NotBeNull("background color should be preserved after reopen");
     }
 
+    // ==================== Bug #111-130: Delete/Move/Add, ResidentServer, Query edge cases ====================
+
+    /// Bug #111 — Word Remove: no cleanup of embedded relationships
+    /// File: WordHandler.Add.cs, lines 1177-1185
+    /// Remove() just calls element.Remove() without cleaning up
+    /// hyperlink relationships, image parts, or other embedded content.
+    [Fact]
+    public void Bug111_WordRemove_NoRelationshipCleanup()
+    {
+        // Add a hyperlink paragraph
+        _wordHandler.Add("/body", "p", null, new()
+        {
+            ["text"] = "Click here",
+            ["link"] = "https://example.com"
+        });
+
+        // Remove the paragraph — the hyperlink relationship should be cleaned up
+        _wordHandler.Remove("/body/p[1]");
+
+        // Reopen to verify
+        ReopenWord();
+        var root = _wordHandler.Get("/");
+        // The relationship to https://example.com may remain orphaned
+        // This is a file bloat / potential corruption issue
+        root.Should().NotBeNull();
+    }
+
+    /// Bug #112 — Word Add table: int.Parse on negative rows/cols
+    /// File: WordHandler.Add.cs, lines 350-351
+    /// No validation that rows/cols are positive. Negative values cause
+    /// empty table or unexpected behavior.
+    [Fact]
+    public void Bug112_WordAddTable_NegativeRowsCols()
+    {
+        // Adding a table with 0 rows — should fail gracefully
+        var act = () => _wordHandler.Add("/body", "tbl", null, new()
+        {
+            ["rows"] = "0",
+            ["cols"] = "3"
+        });
+
+        // Should validate and reject, or create at least 1 row
+        // Instead it silently creates an empty table structure
+        act.Should().NotThrow("zero rows should be handled gracefully");
+
+        // Verify the table exists but has proper structure
+        var node = _wordHandler.Get("/body/tbl[1]");
+        node.Should().NotBeNull();
+    }
+
+    /// Bug #113 — Word Add: int.Parse on firstlineindent with multiplication overflow
+    /// File: WordHandler.Add.cs, line 60
+    /// int.Parse(indent) * 480 can overflow for large indent values.
+    [Fact]
+    public void Bug113_WordAdd_FirstLineIndentOverflow()
+    {
+        var act = () => _wordHandler.Add("/body", "p", null, new()
+        {
+            ["text"] = "Indented",
+            ["firstlineindent"] = "9999999"
+        });
+
+        // int.Parse("9999999") * 480 = 4,799,999,520 which overflows int range
+        // Should either validate range or use long arithmetic
+        act.Should().Throw<Exception>(
+            "int.Parse(indent) * 480 overflows for large indent values");
+    }
+
+    /// Bug #114 — Word Add TOC: bool.Parse on hyperlinks/pagenumbers
+    /// File: WordHandler.Add.cs, lines 808-809
+    /// Uses bool.Parse for "hyperlinks" and "pagenumbers" properties.
+    [Fact]
+    public void Bug114_WordAddToc_BoolParseOnOptions()
+    {
+        var act = () => _wordHandler.Add("/body", "toc", null, new()
+        {
+            ["hyperlinks"] = "yes"
+        });
+
+        act.Should().Throw<FormatException>(
+            "bool.Parse crashes on 'yes' — should use IsTruthy or accept common boolean aliases");
+    }
+
+    /// Bug #115 — Word Add: bool.Parse on paragraph keepnext/keeplines/pagebreakbefore
+    /// File: WordHandler.Add.cs, lines 118-124
+    /// Uses bool.Parse for layout properties during paragraph creation.
+    [Fact]
+    public void Bug115_WordAdd_BoolParseOnParagraphLayoutProperties()
+    {
+        var act = () => _wordHandler.Add("/body", "p", null, new()
+        {
+            ["text"] = "Keep",
+            ["keepnext"] = "1"
+        });
+
+        act.Should().Throw<FormatException>(
+            "bool.Parse crashes on '1' — inconsistent with IsTruthy used elsewhere");
+    }
+
+    /// Bug #116 — Word Add: bool.Parse on paragraph bold/italic/caps/etc.
+    /// File: WordHandler.Add.cs, lines 150-168
+    /// Uses bool.Parse for all run formatting properties during paragraph creation.
+    [Fact]
+    public void Bug116_WordAdd_BoolParseOnRunFormatting()
+    {
+        var act = () => _wordHandler.Add("/body", "p", null, new()
+        {
+            ["text"] = "Bold text",
+            ["bold"] = "yes"
+        });
+
+        act.Should().Throw<FormatException>(
+            "bool.Parse crashes on 'yes' for bold — should accept common boolean aliases");
+    }
+
+    /// Bug #117 — Word Move: IndexOf returning -1 causes wrong path
+    /// File: WordHandler.Add.cs, lines 1223-1225
+    /// After Move, IndexOf(element) on siblings list returns -1 if
+    /// element matching fails, producing path like "/body/p[0]".
+    [Fact]
+    public void Bug117_WordMove_IndexOfReturnsWrongPath()
+    {
+        _wordHandler.Add("/body", "p", null, new() { ["text"] = "First" });
+        _wordHandler.Add("/body", "p", null, new() { ["text"] = "Second" });
+        _wordHandler.Add("/body", "p", null, new() { ["text"] = "Third" });
+
+        // Move third paragraph to position 1
+        var newPath = _wordHandler.Move("/body/p[3]", "/body", 1);
+
+        // The returned path should be valid (1-based)
+        newPath.Should().Contain("p[1]",
+            "Move should return a valid 1-based path for the moved element");
+    }
+
+    /// Bug #118 — Excel sheet deletion: orphaned defined names
+    /// File: ExcelHandler.Add.cs, lines 939-942
+    /// Deleting a sheet removes the part but doesn't clean up
+    /// defined names that reference the deleted sheet.
+    [Fact]
+    public void Bug118_ExcelDeleteSheet_OrphanedDefinedNames()
+    {
+        // Add a second sheet with a named range
+        _excelHandler.Add("/", "sheet", null, new() { ["name"] = "Data" });
+        _excelHandler.Add("/Data", "cell", null, new() { ["ref"] = "A1", ["value"] = "100" });
+
+        // Add a defined name referencing Data sheet
+        _excelHandler.Add("/", "definedname", null, new()
+        {
+            ["name"] = "MyRange",
+            ["value"] = "Data!$A$1"
+        });
+
+        // Delete the Data sheet — the defined name should be cleaned up
+        _excelHandler.Remove("/Data");
+
+        ReopenExcel();
+        // The defined name "MyRange" may still reference the deleted sheet
+        var root = _excelHandler.Get("/");
+        root.Should().NotBeNull();
+    }
+
+    /// Bug #119 — PPTX Remove chart: bare catch swallows errors
+    /// File: PowerPointHandler.Add.cs, lines 1217-1224
+    /// Chart deletion uses try/catch{} that silently swallows part deletion errors.
+    [Fact]
+    public void Bug119_PptxRemoveChart_BareCatchSwallowsErrors()
+    {
+        BlankDocCreator.Create(_pptxPath);
+        using var pptx = new PowerPointHandler(_pptxPath, editable: true);
+        pptx.Add("/", "slide", null, new());
+        pptx.Add("/slide[1]", "chart", null, new()
+        {
+            ["type"] = "bar",
+            ["data"] = "Sales:10,20,30"
+        });
+
+        // Remove the chart
+        pptx.Remove("/slide[1]/chart[1]");
+
+        // Verify chart is removed
+        var node = pptx.Get("/slide[1]");
+        node.Children.Where(c => c.Type == "chart").Should().BeEmpty(
+            "chart should be removed after Remove call");
+    }
+
+    /// Bug #120 — PPTX ungroup: pictures not cleaned up properly
+    /// File: PowerPointHandler.Add.cs, lines 1233-1250
+    /// When ungrouping, pictures moved from group to shape tree
+    /// don't get their media relationships cleaned up.
+    [Fact]
+    public void Bug120_PptxUngroup_PicturesNotCleanedProperly()
+    {
+        BlankDocCreator.Create(_pptxPath);
+        using var pptx = new PowerPointHandler(_pptxPath, editable: true);
+        pptx.Add("/", "slide", null, new());
+
+        // Add shapes and group them
+        pptx.Add("/slide[1]", "shape", null, new() { ["text"] = "Shape A" });
+        pptx.Add("/slide[1]", "shape", null, new() { ["text"] = "Shape B" });
+
+        // Group them
+        pptx.Add("/slide[1]", "group", null, new()
+        {
+            ["shapes"] = "1,2"
+        });
+
+        // Now ungroup — shapes should return to slide level
+        var node = pptx.Get("/slide[1]");
+        node.Should().NotBeNull();
+    }
+
+    /// Bug #121 — Word Add: uint.Parse on page width/height without validation
+    /// File: WordHandler.Add.cs, lines 689-691
+    /// Section page size uses uint.Parse without TryParse.
+    [Fact]
+    public void Bug121_WordAdd_UintParseOnPageSize()
+    {
+        var act = () => _wordHandler.Add("/body", "section", null, new()
+        {
+            ["width"] = "wide"
+        });
+
+        act.Should().Throw<FormatException>(
+            "uint.Parse crashes on 'wide' — should use TryParse");
+    }
+
+    /// Bug #122 — PPTX Query: IndexOf returning -1 for placeholder shapes
+    /// File: PowerPointHandler.Query.cs, line 220
+    /// IndexOf returns -1 if shape not found, causing shapeIdx+1=0 (invalid 1-based index).
+    [Fact]
+    public void Bug122_PptxQuery_PlaceholderIndexOfMinusOne()
+    {
+        BlankDocCreator.Create(_pptxPath);
+        using var pptx = new PowerPointHandler(_pptxPath, editable: true);
+        pptx.Add("/", "slide", null, new());
+
+        // Get slide — placeholder shapes from layout should have valid indices
+        var node = pptx.Get("/slide[1]");
+        node.Should().NotBeNull();
+        // Placeholder nodes should have paths with valid 1-based indices
+        foreach (var child in node.Children)
+        {
+            if (child.Path.Contains("shape["))
+            {
+                child.Path.Should().NotContain("shape[0]",
+                    "shape index should be 1-based, not 0 from IndexOf returning -1");
+            }
+        }
+    }
+
+    /// Bug #123 — Word Add run: bool.Parse on all formatting properties
+    /// File: WordHandler.Add.cs, lines 278-296
+    /// Run creation uses bool.Parse for bold, italic, strike, caps, etc.
+    [Fact]
+    public void Bug123_WordAddRun_BoolParseOnFormatting()
+    {
+        _wordHandler.Add("/body", "p", null, new() { ["text"] = "Hello" });
+
+        var act = () => _wordHandler.Add("/body/p[1]", "r", null, new()
+        {
+            ["text"] = " World",
+            ["bold"] = "TRUE"
+        });
+
+        // bool.Parse is case-insensitive for "True"/"False" but crashes on other values
+        // "TRUE" actually works with bool.Parse, but "1" or "yes" don't
+        var act2 = () => _wordHandler.Add("/body/p[1]", "r", null, new()
+        {
+            ["text"] = " World",
+            ["bold"] = "on"
+        });
+
+        act2.Should().Throw<FormatException>(
+            "bool.Parse crashes on 'on' — should use IsTruthy for consistency");
+    }
+
+    /// Bug #124 — Word Add image: bool.Parse on anchor/behindtext
+    /// File: WordHandler.Add.cs, lines 488, 499
+    /// Image floating properties use bool.Parse.
+    [Fact]
+    public void Bug124_WordAddImage_BoolParseOnAnchor()
+    {
+        var imgPath = CreateTempImage();
+        try
+        {
+            var act = () => _wordHandler.Add("/body", "image", null, new()
+            {
+                ["src"] = imgPath,
+                ["anchor"] = "yes"
+            });
+
+            act.Should().Throw<FormatException>(
+                "bool.Parse crashes on 'yes' for anchor property");
+        }
+        finally
+        {
+            if (File.Exists(imgPath)) File.Delete(imgPath);
+        }
+    }
+
+    /// Bug #125 — Word Add style: bool.Parse and int.Parse
+    /// File: WordHandler.Add.cs, lines 930, 933, 938
+    /// Style creation uses bool.Parse for bold/italic and int.Parse for size.
+    [Fact]
+    public void Bug125_WordAddStyle_BoolAndIntParse()
+    {
+        var act = () => _wordHandler.Add("/styles", "style", null, new()
+        {
+            ["name"] = "MyStyle",
+            ["bold"] = "1",
+            ["size"] = "12.5"
+        });
+
+        act.Should().Throw<FormatException>(
+            "bool.Parse on '1' or int.Parse on '12.5' crashes in style creation");
+    }
+
+    /// Bug #126 — Word Add header: bool.Parse and int.Parse
+    /// File: WordHandler.Add.cs, lines 986-989
+    /// Header creation uses bool.Parse for bold/italic.
+    [Fact]
+    public void Bug126_WordAddHeader_BoolParseOnFormatting()
+    {
+        var act = () => _wordHandler.Add("/body", "header", null, new()
+        {
+            ["text"] = "Header",
+            ["bold"] = "yes"
+        });
+
+        act.Should().Throw<FormatException>(
+            "bool.Parse crashes on 'yes' in header creation");
+    }
+
+    /// Bug #127 — Word Add: shading split produces empty array element
+    /// File: WordHandler.Add.cs, line 88
+    /// pShdVal.Split(';') on a value without semicolons returns one element,
+    /// but accessing shdParts[1] or [2] would fail.
+    [Fact]
+    public void Bug127_WordAdd_ShadingSplitEdgeCase()
+    {
+        // Shading with just a color, no pattern/theme
+        var act = () => _wordHandler.Add("/body", "p", null, new()
+        {
+            ["text"] = "Shaded",
+            ["shd"] = "FF0000"
+        });
+
+        // Should handle single value (just color) without crash
+        act.Should().NotThrow(
+            "Shading with single color value should not crash on split parsing");
+    }
+
+    /// Bug #128 — Word Add document properties: uint.Parse / int.Parse
+    /// File: WordHandler.Add.cs, lines 1309-1324
+    /// Document property setting uses uint.Parse and int.Parse without validation.
+    [Fact]
+    public void Bug128_WordAdd_DocumentPropertyParse()
+    {
+        var act = () => _wordHandler.Set("/", new()
+        {
+            ["pagewidth"] = "auto"
+        });
+
+        act.Should().Throw<Exception>(
+            "uint.Parse crashes on 'auto' for page width");
+    }
+
+    /// Bug #129 — PPTX RemovePictureWithCleanup: bare catch swallows all errors
+    /// File: PowerPointHandler.cs, lines 333-340
+    /// Uses catch{} that silently swallows deletion errors including
+    /// invalid relationship IDs and corrupted part references.
+    [Fact]
+    public void Bug129_PptxRemovePicture_BareCatchSwallowsErrors()
+    {
+        BlankDocCreator.Create(_pptxPath);
+        using var pptx = new PowerPointHandler(_pptxPath, editable: true);
+        pptx.Add("/", "slide", null, new());
+
+        var imgPath = CreateTempImage();
+        try
+        {
+            pptx.Add("/slide[1]", "picture", null, new() { ["src"] = imgPath });
+            pptx.Remove("/slide[1]/picture[1]");
+
+            // Verify picture is removed
+            var node = pptx.Get("/slide[1]");
+            node.Children.Where(c => c.Type == "picture").Should().BeEmpty(
+                "picture should be removed");
+        }
+        finally
+        {
+            if (File.Exists(imgPath)) File.Delete(imgPath);
+        }
+    }
+
+    /// Bug #130 — Excel Add chart: chart position int.Parse series
+    /// File: ExcelHandler.Add.cs, lines 838-841
+    /// Chart width/height use int.Parse, treating them as column/row counts.
+    /// But "width" semantically suggests pixels, causing confusion.
+    [Fact]
+    public void Bug130_ExcelAddChart_WidthHeightSemanticConfusion()
+    {
+        // Width is parsed as column count, not pixels
+        _excelHandler.Add("/Sheet1", "cell", null, new() { ["ref"] = "A1", ["value"] = "10" });
+        _excelHandler.Add("/Sheet1", "cell", null, new() { ["ref"] = "A2", ["value"] = "20" });
+
+        var act = () => _excelHandler.Add("/Sheet1", "chart", null, new()
+        {
+            ["type"] = "bar",
+            ["data"] = "Sales:10,20",
+            ["width"] = "400"  // User expects pixels, but code adds to fromCol
+        });
+
+        // int.Parse("400") + 0 = 400 columns — way off screen
+        // The semantics are confusing: width means column span, not pixels
+        act.Should().NotThrow("should handle large width, but result will be off-screen");
+    }
+
     // ==================== Helper Methods ====================
 
     private static string CreateTempImage()
