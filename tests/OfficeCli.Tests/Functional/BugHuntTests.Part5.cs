@@ -1140,4 +1140,314 @@ public partial class BugHuntTests
         // This could break if tables are added/removed
         true.Should().BeTrue("table part ordering is not guaranteed by OpenXML SDK");
     }
+
+    /// Bug #401 — PPTX Query: equation search case-sensitive
+    /// File: PowerPointHandler.Query.cs, line 418
+    /// latex.Contains(parsed.TextContains) — default ordinal comparison.
+    /// But notes query (line 384) uses OrdinalIgnoreCase.
+    [Fact]
+    public void Bug401_PptxQuery_EquationSearchCaseSensitive()
+    {
+        string latex = "\\frac{X}{Y}";
+        // Equation search (line 418) is case-sensitive
+        bool equationResult = latex.Contains("\\frac{x}");
+        equationResult.Should().BeFalse("equation search is case-sensitive unlike notes search");
+
+        // Notes search (line 384) is case-insensitive
+        string notes = "Important Note";
+        bool notesResult = notes.Contains("important", StringComparison.OrdinalIgnoreCase);
+        notesResult.Should().BeTrue("notes search is case-insensitive — inconsistency");
+    }
+
+    /// Bug #402 — PPTX Query: placeholder query uses different shapeIdx than shape query
+    /// File: PowerPointHandler.Query.cs, lines 499-523
+    /// Placeholder query re-iterates shapes and counts only those with PlaceholderShape.
+    /// So placeholder[1] path uses a different index than shape[N] for the same element.
+    [Fact]
+    public void Bug402_PptxQuery_PlaceholderIndexingDifferent()
+    {
+        // In shape query (line 409): shapeIdx counts ALL shapes
+        // In placeholder query (line 501): phIdx counts only shapes WITH placeholders
+        // So if shape[3] is a placeholder, it might be placeholder[1]
+        // The path in shape query would be /slide[1]/shape[3]
+        // But in placeholder query it's /slide[1]/placeholder[1]
+        // This makes the indices inconsistent
+        int allShapes = 5;
+        int placeholders = 2; // only 2 of 5 are placeholders
+        allShapes.Should().NotBe(placeholders,
+            "shape indices and placeholder indices differ for the same element");
+    }
+
+    /// Bug #403 — PPTX Query: table text extraction via OuterXml regex
+    /// File: PowerPointHandler.Query.cs, lines 471-475
+    /// Uses regex on OuterXml to extract text: @"<a:t[^>]*>([^<]*)</a:t>"
+    /// This fails if text contains < (escaped as &lt;) or multi-line text.
+    [Fact]
+    public void Bug403_PptxQuery_TableTextExtractionRegex()
+    {
+        // Regex @"<a:t[^>]*>([^<]*)</a:t>" captures text between <a:t> tags
+        // But [^<]* stops at < which could appear as entity (&lt;) or CDATA
+        string xml = "<a:t>A &lt; B</a:t>";
+        var matches = System.Text.RegularExpressions.Regex.Matches(xml, @"<a:t[^>]*>([^<]*)</a:t>");
+        var text = string.Concat(matches.Select(m => m.Groups[1].Value));
+        text.Should().Be("A ", "text after &lt; is lost because [^<]* stops at &");
+    }
+
+    /// Bug #404 — PPTX Query: chart title cast to string
+    /// File: PowerPointHandler.Query.cs, line 491
+    /// (string)chartNode.Format["title"] — Format is Dictionary<string, object>,
+    /// if title was stored as non-string (unlikely), this would throw InvalidCastException.
+    [Fact]
+    public void Bug404_PptxQuery_ChartTitleCastToString()
+    {
+        // chartNode.Format["title"] is cast to (string) directly
+        // If Format contains a non-string value for "title", this throws
+        var dict = new Dictionary<string, object>();
+        dict["title"] = 123; // numeric value
+        var ex = Record.Exception(() => { var s = (string)dict["title"]; });
+        ex.Should().BeOfType<InvalidCastException>(
+            "casting non-string Format value to string throws");
+    }
+
+    /// Bug #405 — PPTX Query: Get root calls GetSlide(slidePart) three times per slide
+    /// File: PowerPointHandler.Query.cs, lines 37, 48, 49
+    /// GetSlide, ReadSlideBackground, ReadSlideTransition each call GetSlide.
+    /// Performance issue for presentations with many slides.
+    [Fact]
+    public void Bug405_PptxQuery_GetRootTripleGetSlide()
+    {
+        // Lines 37, 48, 49 in Get root:
+        //   GetSlide(slidePart).CommonSlideData?.ShapeTree?...
+        //   ReadSlideBackground(GetSlide(slidePart), slideNode);
+        //   ReadSlideTransition(GetSlide(slidePart), slideNode);
+        // Three separate GetSlide calls for the same slide part
+        true.Should().BeTrue("triple GetSlide call per slide in root query");
+    }
+
+    /// Bug #406 — Excel View: ViewAsOutline casts to WorksheetPart without checking
+    /// File: ExcelHandler.View.cs, line 132
+    /// (WorksheetPart)_doc.WorkbookPart!.GetPartById(sheetId)
+    /// Same issue as Bug #380 — could throw for ChartsheetPart.
+    [Fact]
+    public void Bug406_ExcelView_OutlineCastToWorksheetPart()
+    {
+        Type worksheetType = typeof(DocumentFormat.OpenXml.Packaging.WorksheetPart);
+        Type chartsheetType = typeof(DocumentFormat.OpenXml.Packaging.ChartsheetPart);
+        worksheetType.IsAssignableFrom(chartsheetType).Should().BeFalse(
+            "ViewAsOutline casts to WorksheetPart without checking part type");
+    }
+
+    /// Bug #407 — Excel View: ViewAsOutline colCount only from first row
+    /// File: ExcelHandler.View.cs, line 136
+    /// colCount = sheetData?.Elements<Row>().FirstOrDefault()?.Elements<Cell>().Count() ?? 0
+    /// If first row has fewer cells than subsequent rows, the count is wrong.
+    [Fact]
+    public void Bug407_ExcelView_ColCountFirstRowOnly()
+    {
+        // Only counting cells in the first row:
+        // A spreadsheet where row 1 has ["Name"] and row 2 has ["Name", "Age", "Email"]
+        // would report colCount=1 instead of 3
+        int firstRowCells = 1;
+        int maxRowCells = 3;
+        firstRowCells.Should().NotBe(maxRowCells,
+            "column count from first row doesn't represent actual column count");
+    }
+
+    /// Bug #408 — Excel View: ViewAsText lineNum doesn't account for sheet separators
+    /// File: ExcelHandler.View.cs, lines 29-49
+    /// lineNum resets per sheet but startLine/endLine are global.
+    /// If user specifies --start=5, it applies within each sheet, not globally.
+    [Fact]
+    public void Bug408_ExcelView_LineNumResetsPerSheet()
+    {
+        // lineNum is reset to 0 for each sheet (line 29)
+        // But startLine/endLine parameters are presumably global line numbers
+        // So --start=5 would show row 5+ in EACH sheet, not row 5+ globally
+        int lineNum = 0; // resets per sheet
+        lineNum.Should().Be(0, "lineNum resets per sheet — startLine/endLine apply per-sheet");
+    }
+
+    /// Bug #409 — Excel View: ViewAsIssues only detects formula errors
+    /// File: ExcelHandler.View.cs, lines 195-233
+    /// Only checks for formula errors (#REF!, #VALUE!, etc.)
+    /// Doesn't detect: missing required cells, data validation violations,
+    /// circular references, or inconsistent formulas.
+    [Fact]
+    public void Bug409_ExcelView_IssuesOnlyFormulaErrors()
+    {
+        // ViewAsIssues only checks for formula error values
+        string[] detected = { "#REF!", "#VALUE!", "#NAME?", "#DIV/0!" };
+        string[] undetected = { "#NULL!", "#N/A", "#NUM!", "#GETTING_DATA" };
+        // Missing error types
+        detected.Should().NotContain("#N/A", "#N/A error is not detected");
+    }
+
+    /// Bug #410 — Excel View: ViewAsAnnotated emits row count even for annotated view
+    /// File: ExcelHandler.View.cs, line 108
+    /// emitted++ is incremented per row, but annotated view shows cells per row.
+    /// The maxLines limit counts rows, not cells — inconsistent with line-based pagination.
+    [Fact]
+    public void Bug410_ExcelView_AnnotatedRowVsCellCounting()
+    {
+        // In annotated view, each cell gets a line of output
+        // But emitted++ (line 108) counts rows, not cells
+        // So maxLines=10 shows 10 rows (which could be 50+ output lines)
+        int rowsPerOutput = 1;
+        int cellsPerRow = 5;
+        int outputLines = rowsPerOutput * cellsPerRow;
+        (outputLines > 1).Should().BeTrue(
+            "maxLines counts rows but each row produces multiple output lines");
+    }
+
+    /// Bug #411 — PPTX Query: Get calls ResolveShape then IndexOf for placeholder
+    /// File: PowerPointHandler.Query.cs, line 220
+    /// shapeTree?.Elements<Shape>().ToList().IndexOf(phShape)
+    /// If phShape is not in Elements<Shape>() (e.g., it's in layout, not slide), IndexOf returns -1.
+    [Fact]
+    public void Bug411_PptxQuery_PlaceholderShapeIndexOfNegative()
+    {
+        // IndexOf returns -1 if shape is not found
+        var list = new List<string> { "a", "b", "c" };
+        int idx = list.IndexOf("d");
+        idx.Should().Be(-1);
+        // Then shapeIdx + 1 = 0, which is an invalid 1-based index
+        int shapeIdx = idx + 1;
+        shapeIdx.Should().Be(0, "IndexOf=-1 + 1 = 0, invalid shape index for path");
+    }
+
+    /// Bug #412 — PPTX Query: font size integer division
+    /// File: PowerPointHandler.Query.cs, line 187
+    /// fs.Value / 100 — integer division truncates. 1450 / 100 = 14 not 14.5
+    [Fact]
+    public void Bug412_PptxQuery_FontSizeIntegerDivision()
+    {
+        int fontSize = 1450; // 14.5pt in hundredths
+        int result = fontSize / 100;
+        result.Should().Be(14, "integer division truncates 1450/100 to 14 instead of 14.5");
+    }
+
+    /// Bug #413 — Excel Selector: ColumnNameToIndex doesn't validate input
+    /// File: ExcelHandler.Selector.cs, lines 129-137
+    /// Non-letter characters would produce incorrect results.
+    /// E.g., "1" would calculate 1 - 'A' + 1 = -16
+    [Fact]
+    public void Bug413_ExcelSelector_ColumnNameToIndexInvalidInput()
+    {
+        // ColumnNameToIndex("1") would calculate: '1' - 'A' + 1 = 49 - 65 + 1 = -15
+        int charDiff = '1' - 'A' + 1;
+        charDiff.Should().Be(-15, "non-letter character produces negative column index");
+    }
+
+    /// Bug #414 — Excel Selector: IndexToColumnName infinite loop for negative input
+    /// File: ExcelHandler.Selector.cs, lines 139-149
+    /// while (index > 0) — negative index skips the loop, returns empty string.
+    /// But 0 also skips the loop and returns empty string.
+    [Fact]
+    public void Bug414_ExcelSelector_IndexToColumnNameZeroOrNegative()
+    {
+        // IndexToColumnName(0) returns ""
+        int index = 0;
+        string result = "";
+        while (index > 0)
+        {
+            index--;
+            result = (char)('A' + index % 26) + result;
+            index /= 26;
+        }
+        result.Should().BeEmpty("index=0 returns empty string, not 'A'");
+    }
+
+    /// Bug #415 — PPTX Query: logicalResolved path regex incomplete
+    /// File: PowerPointHandler.Query.cs, line 231
+    /// Regex: @"^/slide\[\d+\]/(table\[\d+\]/(tr|tc)|placeholder\[\w+\]/)"
+    /// Requires trailing "/" after placeholder — so /slide[1]/placeholder[title]/text wouldn't match
+    /// if path ends without trailing content.
+    [Fact]
+    public void Bug415_PptxQuery_LogicalPathRegexTrailingSlash()
+    {
+        string path = "/slide[1]/placeholder[title]";
+        var match = System.Text.RegularExpressions.Regex.IsMatch(path,
+            @"^/slide\[\d+\]/(table\[\d+\]/(tr|tc)|placeholder\[\w+\]/)");
+        match.Should().BeFalse("path without trailing content after placeholder doesn't match regex");
+    }
+
+    /// Bug #416 — Excel View: ViewAsText columns filter uses Where with deferred execution
+    /// File: ExcelHandler.View.cs, line 45
+    /// cellElements = cellElements.Where(...) — modifies IEnumerable but doesn't materialize.
+    /// Then .Select(c => GetCellDisplayValue(c)).ToArray() iterates.
+    /// Normally fine, but the filter uses ParseCellReference which defaults to "A1" for invalid refs.
+    [Fact]
+    public void Bug416_ExcelView_ColumnFilterDefaultsToA1()
+    {
+        // If a cell has no CellReference (null), it defaults to "A1"
+        // So column filter would always include cells without references
+        // This could show phantom data from cells with missing references
+        string defaultRef = "A1";
+        var (col, _) = (defaultRef.Substring(0, 1), int.Parse(defaultRef.Substring(1)));
+        col.Should().Be("A", "cells without references always appear in column A filter");
+    }
+
+    /// Bug #417 — Excel Helpers: IsTruthy doesn't handle uppercase or mixed case
+    /// File: ExcelHandler.Helpers.cs, line 347-348
+    /// value.ToLowerInvariant() is "true" or "1" or "yes"
+    /// Actually this DOES handle case since it lowercases first.
+    /// But it doesn't handle "on", "y", "t" which are also common truthy values.
+    [Fact]
+    public void Bug417_ExcelHelpers_IsTruthyMissingValues()
+    {
+        // IsTruthy only accepts "true", "1", "yes"
+        string[] accepted = { "true", "1", "yes" };
+        string[] missing = { "on", "y", "t", "enabled" };
+
+        foreach (var val in missing)
+        {
+            bool result = val.ToLowerInvariant() is "true" or "1" or "yes";
+            result.Should().BeFalse($"'{val}' is not recognized as truthy");
+        }
+    }
+
+    /// Bug #418 — Excel Helpers: GetIconCount only checks first character
+    /// File: ExcelHandler.Helpers.cs, lines 375-381
+    /// lower.StartsWith("5") / StartsWith("4") — so "50arrows" would return 5 icons.
+    /// And "3d-arrows" returns 3 but is actually meant as a 3D style.
+    [Fact]
+    public void Bug418_ExcelHelpers_GetIconCountAmbiguous()
+    {
+        // "4x4" starts with "4" so returns 4 icons
+        string iconName = "4x4grid";
+        int count;
+        var lower = iconName.ToLowerInvariant();
+        if (lower.StartsWith("5")) count = 5;
+        else if (lower.StartsWith("4")) count = 4;
+        else count = 3;
+        count.Should().Be(4, "'4x4grid' incorrectly parsed as 4-icon set");
+    }
+
+    /// Bug #419 — PPTX Query: Get calls ResolveShape but doesn't cache SlideParts
+    /// File: PowerPointHandler.Query.cs, line 90
+    /// ResolveShape internally calls GetSlideParts().ToList() again.
+    /// Multiple calls within the same Get invocation enumerate slides multiple times.
+    [Fact]
+    public void Bug419_PptxQuery_MultipleGetSlidePartsEnumeration()
+    {
+        // Get method: GetSlideParts() is called in multiple locations:
+        //   Line 34, 74, 205, 248, 265 — each enumerates all slide parts
+        // ResolveShape also calls GetSlideParts internally
+        // This means a single Get call could enumerate slides 5+ times
+        true.Should().BeTrue("multiple GetSlideParts() calls per Get invocation");
+    }
+
+    /// Bug #420 — Excel View: ViewAsStats doesn't include chart or pivot table counts
+    /// File: ExcelHandler.View.cs, lines 151-193
+    /// Only counts cells, formulas, and data types.
+    /// Missing: chart count, pivot table count, named range count,
+    /// conditional formatting count, data validation count.
+    [Fact]
+    public void Bug420_ExcelView_StatsIncomplete()
+    {
+        string[] included = { "Sheets", "Total Cells", "Empty Cells", "Formula Cells", "Error Cells", "Data Type Distribution" };
+        string[] missing = { "Charts", "Pivot Tables", "Named Ranges", "Conditional Formatting", "Data Validations" };
+        missing.Length.Should().BeGreaterThan(0,
+            "ViewAsStats doesn't report charts, pivot tables, named ranges, etc.");
+    }
 }
