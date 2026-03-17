@@ -93,6 +93,9 @@ Path system (1-based):
   /body/p[N]/r[M]            Run M in paragraph N
   /body/tbl[N]               Table N
   /body/tbl[N]/tr[R]/tc[C]   Cell at row R, column C
+  /header[N]                 Header N
+  /footer[N]                 Footer N
+  /bookmark[Name]            Bookmark by name
 
 Common workflow:
   1. officecli view doc.docx outline              # understand structure
@@ -148,6 +151,9 @@ Standard paths:
   /body/p[3]               Paragraph 3
   /body/p[1]/r[1]          Run 1 (format: font, size, bold, italic, superscript, subscript)
   /body/tbl[1]/tr[1]/tc[1] Table cell
+  /header[N]               Header N (type, text, font, size, bold, italic, color, alignment)
+  /footer[N]               Footer N (same as header)
+  /bookmark[Name]          Bookmark by name (text between start/end, id)
   /footnote[N]             Footnote N (N = id from add, returns text)
   /endnote[N]              Endnote N (N = id from add, returns text)
   /toc[N]                  TOC N (returns levels, hyperlinks, pageNumbers)
@@ -176,7 +182,7 @@ Examples:
 Word (.docx) — query
 =====================
 
-Element types:  paragraph (p), run (r), table (tbl), picture, equation
+Element types:  paragraph (p), run (r), table (tbl), picture, equation, header, footer, bookmark
 Attribute filters:  [attr=value], [attr!=value]
 Pseudo-selectors:   :contains("text"), :empty, :no-alt, :has(formula)
 Child combinator:   paragraph > run[bold=true]
@@ -190,6 +196,10 @@ Examples:
   officecli query doc.docx 'picture:no-alt'
   officecli query doc.docx 'paragraph > run[font!=Arial]'
   officecli query doc.docx 'paragraph[alignment=center]'
+  officecli query doc.docx 'header'
+  officecli query doc.docx 'footer'
+  officecli query doc.docx 'bookmark'
+  officecli query doc.docx 'bookmark:contains("important")'
 """;
 
     const string DocxSet = """
@@ -242,6 +252,15 @@ Section (/section[N]):
   pagewidth, pageheight (twips), orientation (portrait|landscape),
   margintop, marginbottom, marginleft, marginright (twips)
 
+Header (/header[N]):
+  text, font, size, bold, italic, color, alignment
+
+Footer (/footer[N]):
+  text, font, size, bold, italic, color, alignment
+
+Bookmark (/bookmark[Name]):
+  name (rename), text (replace content between start/end)
+
 Style (/styles/StyleId):
   name, basedon, next, font, size, bold, italic, color,
   alignment, spacebefore, spaceafter
@@ -259,6 +278,9 @@ Examples:
   officecli set doc.docx '/toc[1]' --prop levels="1-2" --prop pagenumbers=false
   officecli set doc.docx '/section[1]' --prop orientation=landscape --prop margintop=720
   officecli set doc.docx '/styles/Heading1' --prop font=Arial --prop size=16 --prop bold=true
+  officecli set doc.docx '/header[1]' --prop text="New Header" --prop bold=true
+  officecli set doc.docx '/footer[1]' --prop text="Page Footer" --prop alignment=center
+  officecli set doc.docx '/bookmark[MyBookmark]' --prop text="Updated text"
 """;
 
     const string DocxAdd = """
@@ -293,6 +315,9 @@ Types and properties:
 
   picture (image, img)  -- parent: /body/p[N] or /body
     path (required), width, height (cm/in/pt/px/EMU), alt
+    Floating: anchor=true, wrap (none|square|tight|through|topAndBottom),
+      hposition, vposition (cm/in/pt/EMU), hrelative (margin|page|column|character),
+      vrelative (margin|page|paragraph|line), behindText (bool)
 
   equation (formula, math)  -- parent: /body/p[N] or /body
     formula (required, LaTeX subset), mode (display|inline)
@@ -319,6 +344,15 @@ Types and properties:
     levels (default "1-3"), title, hyperlinks (true|false),
     pagenumbers (true|false)
 
+  header  -- parent: /
+    text, type (default|first|even), font, size, bold, italic, color, alignment
+
+  footer  -- parent: /
+    text, type (default|first|even), font, size, bold, italic, color, alignment
+
+  bookmark  -- parent: /body/p[N]
+    name (required), text (optional, creates run between start/end)
+
   style  -- parent: /body (creates in styles part)
     name (required), id, type (paragraph|character|table),
     basedon, next, font, size, bold, italic, color,
@@ -339,6 +373,7 @@ Examples:
   officecli add doc.docx '/body/tbl[1]' --type row --prop c1="Name" --prop c2="Value"
   officecli add doc.docx '/body/tbl[1]/tr[1]' --type cell --prop text="Extra"
   officecli add doc.docx /body --type picture --prop path=logo.png --prop width=5cm
+  officecli add doc.docx /body --type picture --prop path=bg.png --prop anchor=true --prop wrap=square --prop hposition=2cm --prop vposition=3cm
   officecli add doc.docx '/body/p[1]' --type equation --prop formula="\frac{a}{b}"
   officecli add doc.docx '/body/p[3]' --type comment --prop text="Please review"
   officecli add doc.docx /body --type section --prop type=nextPage
@@ -347,6 +382,9 @@ Examples:
   officecli add doc.docx /body --type toc --prop levels="1-3" --prop title="Contents"
   officecli add doc.docx /body --type style --prop name=MyStyle --prop font=Arial --prop bold=true
   officecli set doc.docx / --prop title="My Doc" --prop author="John"
+  officecli add doc.docx / --type header --prop text="My Header" --prop type=default --prop bold=true
+  officecli add doc.docx / --type footer --prop text="Page Footer" --prop alignment=center
+  officecli add doc.docx '/body/p[1]' --type bookmark --prop name=MyBookmark --prop text="marked text"
   officecli add doc.docx /body --from '/body/p[1]' --index 5
 """;
 
@@ -386,6 +424,14 @@ Path system (1-based for rows, standard cell refs):
   /Sheet1              Sheet by name
   /Sheet1/A1           Cell A1 in Sheet1
   /Sheet1/row[N]       Row N
+  /Sheet1/col[A]       Column A
+  /Sheet1/chart[N]     Chart N
+  /Sheet1/picture[N]   Picture N
+  /Sheet1/table[N]     Table (ListObject) N
+  /Sheet1/comment[N]   Comment/note N
+  /Sheet1/validation[N] Data validation N
+  /namedrange[N]       Named range by index
+  /namedrange[Name]    Named range by name
 
 Common workflow:
   1. officecli view data.xlsx outline              # see sheets and dimensions
@@ -439,6 +485,16 @@ Paths:
   /              Workbook root (lists sheets)
   /Sheet1        Sheet (lists rows/cells summary)
   /Sheet1/A1     Specific cell
+  /Sheet1/col[A]       Column (width, hidden)
+  /Sheet1/row[N]       Row (height, hidden)
+  /Sheet1/chart[N]     Chart (title, type, legend)
+  /Sheet1/picture[N]   Picture (alt, name, position, size)
+  /Sheet1/table[N]     Table (name, ref, style, columns)
+  /Sheet1/comment[N]   Comment (ref, text, author)
+  /Sheet1/validation[N] Data validation (sqref, type, formula1, ...)
+  /Sheet1/cf[N]        Conditional formatting
+  /Sheet1/autofilter   AutoFilter range
+  /namedrange[N]       Named range by index or name
 
 Options:
   --depth N   Depth of child nodes (default 1)
@@ -479,6 +535,9 @@ Examples:
   officecli query data.xlsx 'A'
   officecli query data.xlsx 'cell:contains("error")'
   officecli query data.xlsx 'cell[type=Number]'
+  officecli query data.xlsx 'validation'
+  officecli query data.xlsx 'comment'
+  officecli query data.xlsx 'table'
 """;
 
     const string XlsxSet = """
@@ -515,6 +574,26 @@ Sheet properties (/SheetName):
 AutoFilter (/SheetName/autofilter):
   range          Update filter range (e.g. A1:F100)
 
+Data validation (/SheetName/validation[N]):
+  sqref, type (list|whole|decimal|date|time|textLength|custom),
+  operator (between|equal|greaterThan|...), formula1, formula2,
+  allowBlank, showError, errorTitle, error, showInput, promptTitle, prompt
+
+Picture (/SheetName/picture[N]):
+  x, y (col/row offset), width, height (col/row span), alt
+
+Table (/SheetName/table[N]):
+  name, displayName, style, ref
+
+Comment (/SheetName/comment[N]):
+  text, author
+
+Named range (/namedrange[N] or /namedrange[Name]):
+  ref, name, comment
+
+Chart (/SheetName/chart[N]):
+  title
+
 Examples:
   officecli set data.xlsx '/Sheet1/A1' --prop value=100 --prop font.bold=true
   officecli set data.xlsx '/Sheet1/A1' --prop border.all=thin --prop border.color=000000
@@ -523,6 +602,11 @@ Examples:
   officecli set data.xlsx '/Sheet1/row[1]' --prop height=30
   officecli set data.xlsx /Sheet1 --prop freeze=A2
   officecli set data.xlsx '/Sheet1/autofilter' --prop range=A1:F100
+  officecli set data.xlsx '/Sheet1/validation[1]' --prop formula1="Yes,No,Maybe"
+  officecli set data.xlsx '/Sheet1/picture[1]' --prop x=5 --prop y=3
+  officecli set data.xlsx '/Sheet1/table[1]' --prop style=TableStyleLight1
+  officecli set data.xlsx '/Sheet1/comment[1]' --prop text="Updated note"
+  officecli set data.xlsx '/namedrange[MyRange]' --prop ref="Sheet1!$A$1:$E$20"
 """;
 
     const string XlsxAdd = """
@@ -559,6 +643,27 @@ Types and properties:
     sqref (e.g. A1:A10), formula (e.g. $A1>100),
     fill (hex), font.color (hex), font.bold (bool)
 
+  validation (datavalidation)  -- parent: /SheetName
+    sqref (required), type (list|whole|decimal|date|time|textLength|custom),
+    formula1, formula2, operator (between|equal|greaterThan|...),
+    allowBlank (bool), showError (bool), errorTitle, error,
+    showInput (bool), promptTitle, prompt
+
+  picture (image)  -- parent: /SheetName
+    path (required), x, y (col/row offset, default 0),
+    width, height (col/row span, default 5), alt
+
+  table (listobject)  -- parent: /SheetName
+    ref (required, e.g. A1:D10), name, displayName,
+    style (default TableStyleMedium2), headerRow (bool), totalRow (bool),
+    columns (comma-separated, auto-detected from header if omitted)
+
+  comment (note)  -- parent: /SheetName
+    ref (required, e.g. A1), text, author (default "Author")
+
+  namedrange (definedname)  -- parent: /
+    name (required), ref (e.g. Sheet1!$A$1:$D$10), scope (sheet name), comment
+
   chart  -- parent: /SheetName
     chartType (column|bar|line|pie|doughnut|area|scatter)
     title, categories (comma-separated), legend (top|bottom|left|right|none)
@@ -576,6 +681,11 @@ Examples:
   officecli add data.xlsx /Sheet1 --type iconset --prop sqref=B1:B10 --prop iconset=3Arrows
   officecli add data.xlsx /Sheet1 --type formulacf --prop sqref=A1:A10 --prop formula="$A1>100" --prop fill=FF0000
   officecli add data.xlsx /Sheet1 --type chart --prop chartType=column --prop title="Sales" --prop data="Q1:100,200;Q2:150,250" --prop categories="Jan,Feb"
+  officecli add data.xlsx /Sheet1 --type validation --prop sqref=A1:A100 --prop type=list --prop formula1="Yes,No,Maybe"
+  officecli add data.xlsx /Sheet1 --type picture --prop path=logo.png --prop x=1 --prop y=1 --prop width=4 --prop height=3
+  officecli add data.xlsx /Sheet1 --type table --prop ref=A1:D10 --prop name=SalesData --prop style=TableStyleMedium2
+  officecli add data.xlsx /Sheet1 --type comment --prop ref=A1 --prop text="Check this value" --prop author=John
+  officecli add data.xlsx / --type namedrange --prop name=MyRange --prop ref="Sheet1!$A$1:$D$10"
   officecli set data.xlsx '/Sheet1/A1' --prop link="https://example.com"
 """;
 

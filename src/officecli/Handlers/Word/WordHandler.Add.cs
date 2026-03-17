@@ -7,6 +7,7 @@ using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
 using OfficeCli.Core;
 using C = DocumentFormat.OpenXml.Drawing.Charts;
+using DW = DocumentFormat.OpenXml.Drawing.Wordprocessing;
 using M = DocumentFormat.OpenXml.Math;
 
 namespace OfficeCli.Handlers;
@@ -483,7 +484,25 @@ public partial class WordHandler
 
                 var altText = properties.GetValueOrDefault("alt", Path.GetFileName(imgPath));
 
-                var imgRun = CreateImageRun(relId, cxEmu, cyEmu, altText);
+                Run imgRun;
+                if (properties.TryGetValue("anchor", out var anchorVal) && bool.Parse(anchorVal))
+                {
+                    var wrapType = properties.GetValueOrDefault("wrap", "none");
+                    long hPos = properties.TryGetValue("hposition", out var hPosStr) ? ParseEmu(hPosStr) : 0;
+                    long vPos = properties.TryGetValue("vposition", out var vPosStr) ? ParseEmu(vPosStr) : 0;
+                    var hRel = properties.TryGetValue("hrelative", out var hRelStr)
+                        ? ParseHorizontalRelative(hRelStr)
+                        : DW.HorizontalRelativePositionValues.Margin;
+                    var vRel = properties.TryGetValue("vrelative", out var vRelStr)
+                        ? ParseVerticalRelative(vRelStr)
+                        : DW.VerticalRelativePositionValues.Margin;
+                    var behind = properties.TryGetValue("behindtext", out var behindStr) && bool.Parse(behindStr);
+                    imgRun = CreateAnchorImageRun(relId, cxEmu, cyEmu, altText, wrapType, hPos, vPos, hRel, vRel, behind);
+                }
+                else
+                {
+                    imgRun = CreateImageRun(relId, cxEmu, cyEmu, altText);
+                }
 
                 Paragraph imgPara;
                 if (parent is Paragraph existingPara)
@@ -560,6 +579,36 @@ public partial class WordHandler
 
                 newElement = rangeStart;
                 resultPath = $"{parentPath}/comment[{commentId}]";
+                break;
+            }
+
+            case "bookmark":
+            {
+                var bkName = properties.GetValueOrDefault("name", "");
+                if (string.IsNullOrEmpty(bkName))
+                    throw new ArgumentException("'name' property is required for bookmark");
+
+                var existingIds = body.Descendants<BookmarkStart>()
+                    .Select(b => int.TryParse(b.Id?.Value, out var id) ? id : 0);
+                var bkId = (existingIds.Any() ? existingIds.Max() + 1 : 1).ToString();
+
+                var bookmarkStart = new BookmarkStart { Id = bkId, Name = bkName };
+                var bookmarkEnd = new BookmarkEnd { Id = bkId };
+
+                if (properties.TryGetValue("text", out var bkText))
+                {
+                    parent.AppendChild(bookmarkStart);
+                    parent.AppendChild(new Run(new Text(bkText) { Space = SpaceProcessingModeValues.Preserve }));
+                    parent.AppendChild(bookmarkEnd);
+                }
+                else
+                {
+                    parent.AppendChild(bookmarkStart);
+                    parent.AppendChild(bookmarkEnd);
+                }
+
+                newElement = bookmarkStart;
+                resultPath = $"/bookmark[{bkName}]";
                 break;
             }
 
@@ -904,6 +953,166 @@ public partial class WordHandler
                 resultPath = $"/styles/{styleId}";
                 newElement = newStyle;
                 break;
+            }
+
+            case "header":
+            {
+                var mainPartH = _doc.MainDocumentPart!;
+                var headerPart = mainPartH.AddNewPart<HeaderPart>();
+
+                var hPara = new Paragraph();
+                var hPProps = new ParagraphProperties();
+
+                if (properties.TryGetValue("alignment", out var hAlign))
+                    hPProps.Justification = new Justification
+                    {
+                        Val = hAlign.ToLowerInvariant() switch
+                        {
+                            "center" => JustificationValues.Center,
+                            "right" => JustificationValues.Right,
+                            "justify" => JustificationValues.Both,
+                            _ => JustificationValues.Left
+                        }
+                    };
+                hPara.AppendChild(hPProps);
+
+                if (properties.TryGetValue("text", out var hText))
+                {
+                    var hRun = new Run();
+                    var hRProps = new RunProperties();
+                    if (properties.TryGetValue("font", out var hFont))
+                        hRProps.AppendChild(new RunFonts { Ascii = hFont, HighAnsi = hFont, EastAsia = hFont });
+                    if (properties.TryGetValue("size", out var hSize))
+                        hRProps.AppendChild(new FontSize { Val = (int.Parse(hSize) * 2).ToString() });
+                    if (properties.TryGetValue("bold", out var hBold) && bool.Parse(hBold))
+                        hRProps.Bold = new Bold();
+                    if (properties.TryGetValue("italic", out var hItalic) && bool.Parse(hItalic))
+                        hRProps.Italic = new Italic();
+                    if (properties.TryGetValue("color", out var hColor))
+                        hRProps.Color = new Color { Val = hColor.ToUpperInvariant() };
+                    hRun.AppendChild(hRProps);
+                    hRun.AppendChild(new Text(hText) { Space = SpaceProcessingModeValues.Preserve });
+                    hPara.AppendChild(hRun);
+                }
+
+                headerPart.Header = new Header(hPara);
+                headerPart.Header.Save();
+
+                var hBody = mainPartH.Document!.Body!;
+                var hSectPr = hBody.Elements<SectionProperties>().LastOrDefault()
+                    ?? hBody.AppendChild(new SectionProperties());
+
+                var headerType = HeaderFooterValues.Default;
+                if (properties.TryGetValue("type", out var hTypeStr))
+                {
+                    headerType = hTypeStr.ToLowerInvariant() switch
+                    {
+                        "first" => HeaderFooterValues.First,
+                        "even" => HeaderFooterValues.Even,
+                        _ => HeaderFooterValues.Default
+                    };
+                }
+
+                var headerRef = new HeaderReference
+                {
+                    Id = mainPartH.GetIdOfPart(headerPart),
+                    Type = headerType
+                };
+                hSectPr.PrependChild(headerRef);
+
+                if (headerType == HeaderFooterValues.First)
+                {
+                    var settingsPart = mainPartH.DocumentSettingsPart
+                        ?? mainPartH.AddNewPart<DocumentSettingsPart>();
+                    settingsPart.Settings ??= new Settings();
+                    if (settingsPart.Settings.GetFirstChild<TitlePage>() == null)
+                        settingsPart.Settings.AppendChild(new TitlePage());
+                    settingsPart.Settings.Save();
+                }
+
+                mainPartH.Document.Save();
+                var hIdx = mainPartH.HeaderParts.ToList().IndexOf(headerPart);
+                return $"/header[{hIdx + 1}]";
+            }
+
+            case "footer":
+            {
+                var mainPartF = _doc.MainDocumentPart!;
+                var footerPart = mainPartF.AddNewPart<FooterPart>();
+
+                var fPara = new Paragraph();
+                var fPProps = new ParagraphProperties();
+
+                if (properties.TryGetValue("alignment", out var fAlign))
+                    fPProps.Justification = new Justification
+                    {
+                        Val = fAlign.ToLowerInvariant() switch
+                        {
+                            "center" => JustificationValues.Center,
+                            "right" => JustificationValues.Right,
+                            "justify" => JustificationValues.Both,
+                            _ => JustificationValues.Left
+                        }
+                    };
+                fPara.AppendChild(fPProps);
+
+                if (properties.TryGetValue("text", out var fText))
+                {
+                    var fRun = new Run();
+                    var fRProps = new RunProperties();
+                    if (properties.TryGetValue("font", out var fFont))
+                        fRProps.AppendChild(new RunFonts { Ascii = fFont, HighAnsi = fFont, EastAsia = fFont });
+                    if (properties.TryGetValue("size", out var fSize))
+                        fRProps.AppendChild(new FontSize { Val = (int.Parse(fSize) * 2).ToString() });
+                    if (properties.TryGetValue("bold", out var fBold) && bool.Parse(fBold))
+                        fRProps.Bold = new Bold();
+                    if (properties.TryGetValue("italic", out var fItalic) && bool.Parse(fItalic))
+                        fRProps.Italic = new Italic();
+                    if (properties.TryGetValue("color", out var fColor))
+                        fRProps.Color = new Color { Val = fColor.ToUpperInvariant() };
+                    fRun.AppendChild(fRProps);
+                    fRun.AppendChild(new Text(fText) { Space = SpaceProcessingModeValues.Preserve });
+                    fPara.AppendChild(fRun);
+                }
+
+                footerPart.Footer = new Footer(fPara);
+                footerPart.Footer.Save();
+
+                var fBody = mainPartF.Document!.Body!;
+                var fSectPr = fBody.Elements<SectionProperties>().LastOrDefault()
+                    ?? fBody.AppendChild(new SectionProperties());
+
+                var footerType = HeaderFooterValues.Default;
+                if (properties.TryGetValue("type", out var fTypeStr))
+                {
+                    footerType = fTypeStr.ToLowerInvariant() switch
+                    {
+                        "first" => HeaderFooterValues.First,
+                        "even" => HeaderFooterValues.Even,
+                        _ => HeaderFooterValues.Default
+                    };
+                }
+
+                var footerRef = new FooterReference
+                {
+                    Id = mainPartF.GetIdOfPart(footerPart),
+                    Type = footerType
+                };
+                fSectPr.PrependChild(footerRef);
+
+                if (footerType == HeaderFooterValues.First)
+                {
+                    var settingsPart = mainPartF.DocumentSettingsPart
+                        ?? mainPartF.AddNewPart<DocumentSettingsPart>();
+                    settingsPart.Settings ??= new Settings();
+                    if (settingsPart.Settings.GetFirstChild<TitlePage>() == null)
+                        settingsPart.Settings.AppendChild(new TitlePage());
+                    settingsPart.Settings.Save();
+                }
+
+                mainPartF.Document.Save();
+                var fIdx = mainPartF.FooterParts.ToList().IndexOf(footerPart);
+                return $"/footer[{fIdx + 1}]";
             }
 
             default:

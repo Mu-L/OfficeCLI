@@ -18,6 +18,23 @@ public partial class WordHandler
         if (path == "/" || path == "")
             return GetRootNode(depth);
 
+        // Handle header/footer paths
+        var segments = ParsePath(path);
+        if (segments.Count >= 1)
+        {
+            var firstName = segments[0].Name.ToLowerInvariant();
+            if (firstName == "header" && segments.Count == 1)
+            {
+                var hIdx = (segments[0].Index ?? 1) - 1;
+                return GetHeaderNode(hIdx, path, depth);
+            }
+            if (firstName == "footer" && segments.Count == 1)
+            {
+                var fIdx = (segments[0].Index ?? 1) - 1;
+                return GetFooterNode(fIdx, path, depth);
+            }
+        }
+
         // Footnote/Endnote paths: /footnote[N], /endnote[N]
         var fnMatch = System.Text.RegularExpressions.Regex.Match(path, @"^/footnote\[(\d+)\]$");
         if (fnMatch.Success)
@@ -173,6 +190,116 @@ public partial class WordHandler
             .ToList();
     }
 
+    private DocumentNode GetHeaderNode(int index, string path, int depth)
+    {
+        var mainPart = _doc.MainDocumentPart;
+        var headerPart = mainPart?.HeaderParts.ElementAtOrDefault(index);
+        if (headerPart?.Header == null)
+            return new DocumentNode { Path = path, Type = "error", Text = $"Path not found: {path}" };
+
+        var header = headerPart.Header;
+        var node = new DocumentNode { Path = path, Type = "header" };
+        node.Text = string.Concat(header.Descendants<Text>().Select(t => t.Text)).Trim();
+
+        var relId = mainPart!.GetIdOfPart(headerPart);
+        var body = mainPart.Document?.Body;
+        if (body != null)
+        {
+            foreach (var sectPr in body.Elements<SectionProperties>())
+                foreach (var href in sectPr.Elements<HeaderReference>())
+                    if (href.Id?.Value == relId && href.Type?.Value != null)
+                    {
+                        node.Format["type"] = href.Type.Value.ToString().ToLowerInvariant();
+                        break;
+                    }
+        }
+
+        var firstRun = header.Descendants<Run>().FirstOrDefault();
+        if (firstRun?.RunProperties != null)
+        {
+            var rp = firstRun.RunProperties;
+            var font = rp.RunFonts?.Ascii?.Value ?? rp.RunFonts?.HighAnsi?.Value;
+            if (font != null) node.Format["font"] = font;
+            if (rp.FontSize?.Val?.Value != null)
+                node.Format["size"] = $"{int.Parse(rp.FontSize.Val.Value) / 2}pt";
+            if (rp.Bold != null) node.Format["bold"] = true;
+            if (rp.Italic != null) node.Format["italic"] = true;
+            if (rp.Color?.Val?.Value != null) node.Format["color"] = rp.Color.Val.Value;
+        }
+
+        var firstPara = header.Elements<Paragraph>().FirstOrDefault();
+        if (firstPara?.ParagraphProperties?.Justification?.Val?.Value != null)
+            node.Format["alignment"] = firstPara.ParagraphProperties.Justification.Val.Value.ToString();
+
+        node.ChildCount = header.Elements<Paragraph>().Count();
+        if (depth > 0)
+        {
+            int pIdx = 0;
+            foreach (var para in header.Elements<Paragraph>())
+            {
+                node.Children.Add(ElementToNode(para, $"{path}/p[{pIdx + 1}]", depth - 1));
+                pIdx++;
+            }
+        }
+
+        return node;
+    }
+
+    private DocumentNode GetFooterNode(int index, string path, int depth)
+    {
+        var mainPart = _doc.MainDocumentPart;
+        var footerPart = mainPart?.FooterParts.ElementAtOrDefault(index);
+        if (footerPart?.Footer == null)
+            return new DocumentNode { Path = path, Type = "error", Text = $"Path not found: {path}" };
+
+        var footer = footerPart.Footer;
+        var node = new DocumentNode { Path = path, Type = "footer" };
+        node.Text = string.Concat(footer.Descendants<Text>().Select(t => t.Text)).Trim();
+
+        var relId = mainPart!.GetIdOfPart(footerPart);
+        var body = mainPart.Document?.Body;
+        if (body != null)
+        {
+            foreach (var sectPr in body.Elements<SectionProperties>())
+                foreach (var fref in sectPr.Elements<FooterReference>())
+                    if (fref.Id?.Value == relId && fref.Type?.Value != null)
+                    {
+                        node.Format["type"] = fref.Type.Value.ToString().ToLowerInvariant();
+                        break;
+                    }
+        }
+
+        var firstRun = footer.Descendants<Run>().FirstOrDefault();
+        if (firstRun?.RunProperties != null)
+        {
+            var rp = firstRun.RunProperties;
+            var font = rp.RunFonts?.Ascii?.Value ?? rp.RunFonts?.HighAnsi?.Value;
+            if (font != null) node.Format["font"] = font;
+            if (rp.FontSize?.Val?.Value != null)
+                node.Format["size"] = $"{int.Parse(rp.FontSize.Val.Value) / 2}pt";
+            if (rp.Bold != null) node.Format["bold"] = true;
+            if (rp.Italic != null) node.Format["italic"] = true;
+            if (rp.Color?.Val?.Value != null) node.Format["color"] = rp.Color.Val.Value;
+        }
+
+        var firstPara = footer.Elements<Paragraph>().FirstOrDefault();
+        if (firstPara?.ParagraphProperties?.Justification?.Val?.Value != null)
+            node.Format["alignment"] = firstPara.ParagraphProperties.Justification.Val.Value.ToString();
+
+        node.ChildCount = footer.Elements<Paragraph>().Count();
+        if (depth > 0)
+        {
+            int pIdx = 0;
+            foreach (var para in footer.Elements<Paragraph>())
+            {
+                node.Children.Add(ElementToNode(para, $"{path}/p[{pIdx + 1}]", depth - 1));
+                pIdx++;
+            }
+        }
+
+        return node;
+    }
+
     public List<DocumentNode> Query(string selector)
     {
         var results = new List<DocumentNode>();
@@ -182,6 +309,41 @@ public partial class WordHandler
         // Simple selector parser: element[attr=value]
         var parsed = ParseSelector(selector);
 
+        // Handle header/footer selectors
+        if (parsed.Element is "header" or "footer")
+        {
+            var mainPart = _doc.MainDocumentPart!;
+            if (parsed.Element == "header")
+            {
+                int hIdx = 0;
+                foreach (var _ in mainPart.HeaderParts)
+                {
+                    var node = GetHeaderNode(hIdx, $"/header[{hIdx + 1}]", 0);
+                    if (node.Type != "error")
+                    {
+                        if (parsed.ContainsText == null || (node.Text?.Contains(parsed.ContainsText) == true))
+                            results.Add(node);
+                    }
+                    hIdx++;
+                }
+            }
+            else
+            {
+                int fIdx = 0;
+                foreach (var _ in mainPart.FooterParts)
+                {
+                    var node = GetFooterNode(fIdx, $"/footer[{fIdx + 1}]", 0);
+                    if (node.Type != "error")
+                    {
+                        if (parsed.ContainsText == null || (node.Text?.Contains(parsed.ContainsText) == true))
+                            results.Add(node);
+                    }
+                    fIdx++;
+                }
+            }
+            return results;
+        }
+
         // Determine if main selector targets runs directly (no > parent)
         bool isRunSelector = parsed.ChildSelector == null &&
             (parsed.Element == "r" || parsed.Element == "run");
@@ -189,6 +351,8 @@ public partial class WordHandler
             (parsed.Element == "picture" || parsed.Element == "image" || parsed.Element == "img");
         bool isEquationSelector = parsed.ChildSelector == null &&
             (parsed.Element == "equation" || parsed.Element == "math" || parsed.Element == "formula");
+        bool isBookmarkSelector = parsed.ChildSelector == null &&
+            parsed.Element == "bookmark";
 
         // Scheme B: generic XML fallback for unrecognized element types
         // Use GenericXmlQuery.ParseSelector which properly handles namespace prefixes (e.g., "a:ln")
@@ -196,12 +360,33 @@ public partial class WordHandler
         bool isKnownType = string.IsNullOrEmpty(genericParsed.element)
             || genericParsed.element is "p" or "paragraph" or "r" or "run"
                 or "picture" or "image" or "img"
-                or "equation" or "math" or "formula";
+                or "equation" or "math" or "formula"
+                or "bookmark";
         if (!isKnownType && parsed.ChildSelector == null)
         {
             var root = _doc.MainDocumentPart?.Document;
             if (root != null)
                 return GenericXmlQuery.Query(root, genericParsed.element, genericParsed.attrs, genericParsed.containsText);
+            return results;
+        }
+
+        // Handle bookmark query
+        if (isBookmarkSelector)
+        {
+            foreach (var bkStart in body.Descendants<BookmarkStart>())
+            {
+                var bkName = bkStart.Name?.Value ?? "";
+                if (bkName.StartsWith("_")) continue;
+
+                if (parsed.ContainsText != null)
+                {
+                    var bkText = GetBookmarkText(bkStart);
+                    if (!bkText.Contains(parsed.ContainsText, StringComparison.OrdinalIgnoreCase))
+                        continue;
+                }
+
+                results.Add(ElementToNode(bkStart, $"/bookmark[{bkName}]", 0));
+            }
             return results;
         }
 

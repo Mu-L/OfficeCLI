@@ -33,6 +33,56 @@ public partial class ExcelHandler
             return node;
         }
 
+        // Handle /namedrange[N] or /namedrange[Name]
+        var namedRangeMatch = Regex.Match(path.TrimStart('/'), @"^namedrange\[(.+?)\]$", RegexOptions.IgnoreCase);
+        if (namedRangeMatch.Success)
+        {
+            var selector = namedRangeMatch.Groups[1].Value;
+            var workbook = GetWorkbook();
+            var definedNames = workbook.GetFirstChild<DefinedNames>();
+            if (definedNames == null)
+                throw new ArgumentException("No named ranges found in workbook");
+
+            var allDefs = definedNames.Elements<DefinedName>().ToList();
+            DefinedName? dn = null;
+            int dnIndex;
+
+            if (int.TryParse(selector, out dnIndex))
+            {
+                if (dnIndex < 1 || dnIndex > allDefs.Count)
+                    throw new ArgumentException($"Named range index {dnIndex} out of range (1-{allDefs.Count})");
+                dn = allDefs[dnIndex - 1];
+            }
+            else
+            {
+                dn = allDefs.FirstOrDefault(d =>
+                    d.Name?.Value?.Equals(selector, StringComparison.OrdinalIgnoreCase) == true);
+                if (dn == null)
+                    throw new ArgumentException($"Named range '{selector}' not found");
+                dnIndex = allDefs.IndexOf(dn) + 1;
+            }
+
+            var nrNode = new DocumentNode
+            {
+                Path = $"/namedrange[{dnIndex}]",
+                Type = "namedrange",
+                Text = dn.Name?.Value ?? "",
+                Preview = dn.InnerText
+            };
+            nrNode.Format["name"] = dn.Name?.Value ?? "";
+            nrNode.Format["ref"] = dn.InnerText ?? "";
+            if (dn.LocalSheetId?.HasValue == true)
+            {
+                var sheets = workbook.GetFirstChild<Sheets>()?.Elements<Sheet>().ToList();
+                if (sheets != null && (int)dn.LocalSheetId.Value < sheets.Count)
+                    nrNode.Format["scope"] = sheets[(int)dn.LocalSheetId.Value].Name?.Value ?? "";
+            }
+            if (!string.IsNullOrEmpty(dn.Comment?.Value))
+                nrNode.Format["comment"] = dn.Comment.Value;
+
+            return nrNode;
+        }
+
         // Parse path: /SheetName or /SheetName/A1 or /SheetName/A1:D10
         var segments = path.TrimStart('/').Split('/', 2);
         var sheetNameFromPath = segments[0];
@@ -78,6 +128,22 @@ public partial class ExcelHandler
         }
 
         var cellRef = segments[1];
+
+        // Validation path: /Sheet1/validation[N]
+        var validationMatch = Regex.Match(cellRef, @"^validation\[(\d+)\]$", RegexOptions.IgnoreCase);
+        if (validationMatch.Success)
+        {
+            var dvIdx = int.Parse(validationMatch.Groups[1].Value);
+            var dvs = GetSheet(worksheet).GetFirstChild<DataValidations>();
+            if (dvs == null)
+                throw new ArgumentException("No data validations found in sheet");
+
+            var dvList = dvs.Elements<DataValidation>().ToList();
+            if (dvIdx < 1 || dvIdx > dvList.Count)
+                throw new ArgumentException($"Validation index {dvIdx} out of range (1-{dvList.Count})");
+
+            return DataValidationToNode(sheetNameFromPath, dvList[dvIdx - 1], dvIdx);
+        }
 
         // Column path: /Sheet1/col[A]
         var colMatch = Regex.Match(cellRef, @"^col\[([A-Z]+)\]$", RegexOptions.IgnoreCase);
@@ -233,6 +299,30 @@ public partial class ExcelHandler
             return chartNode;
         }
 
+        // Comment path: /Sheet1/comment[N]
+        var commentMatch = Regex.Match(cellRef, @"^comment\[(\d+)\]$", RegexOptions.IgnoreCase);
+        if (commentMatch.Success)
+        {
+            var cmtIndex = int.Parse(commentMatch.Groups[1].Value);
+            var commentsPart = worksheet.WorksheetCommentsPart;
+            if (commentsPart?.Comments == null)
+                throw new ArgumentException($"No comments found in sheet: {sheetNameFromPath}");
+
+            var cmtList = commentsPart.Comments.GetFirstChild<CommentList>();
+            var cmtElement = cmtList?.Elements<Comment>().ElementAtOrDefault(cmtIndex - 1)
+                ?? throw new ArgumentException($"Comment [{cmtIndex}] not found");
+
+            return CommentToNode(sheetNameFromPath, cmtElement, commentsPart.Comments, cmtIndex);
+        }
+
+        // Table path: /Sheet1/table[N]
+        var tableMatch = Regex.Match(cellRef, @"^table\[(\d+)\]$", RegexOptions.IgnoreCase);
+        if (tableMatch.Success)
+        {
+            var tableIdx = int.Parse(tableMatch.Groups[1].Value);
+            return TableToNode(sheetNameFromPath, worksheet, tableIdx, depth);
+        }
+
         // Cell reference: A1 or range A1:D10
         // Check if it's a cell reference or a generic XML path
         var firstPart = cellRef.Split('/')[0].Split('[')[0];
@@ -240,6 +330,14 @@ public partial class ExcelHandler
 
         if (!isCellRef)
         {
+            // Handle picture[N] path segment
+            var picMatch = Regex.Match(cellRef, @"^picture\[(\d+)\]$", RegexOptions.IgnoreCase);
+            if (picMatch.Success)
+            {
+                var picIndex = int.Parse(picMatch.Groups[1].Value);
+                return GetPictureNode(sheetNameFromPath, worksheet, picIndex, path);
+            }
+
             // Generic XML fallback: navigate worksheet XML tree
             var xmlSegments = GenericXmlQuery.ParsePathSegments(cellRef);
             var target = GenericXmlQuery.NavigateByPath(GetSheet(worksheet), xmlSegments);
@@ -271,7 +369,7 @@ public partial class ExcelHandler
         var elementMatch = Regex.Match(selector.Split('!').Last(), @"^([\w:]+)");
         var elementName = elementMatch.Success ? elementMatch.Groups[1].Value : "";
         bool isKnownType = string.IsNullOrEmpty(elementName)
-            || elementName is "cell" or "row" or "sheet"
+            || elementName is "cell" or "row" or "sheet" or "validation" or "comment" or "note" or "table" or "listobject"
             || (elementName.Length <= 3 && Regex.IsMatch(elementName, @"^[A-Z]+$", RegexOptions.IgnoreCase));
         if (!isKnownType)
         {
@@ -286,6 +384,60 @@ public partial class ExcelHandler
         }
 
         var parsed = ParseCellSelector(selector);
+
+        // Handle validation queries
+        if (elementName == "validation")
+        {
+            foreach (var (sheetName, worksheetPart) in GetWorksheets())
+            {
+                if (parsed.Sheet != null && !sheetName.Equals(parsed.Sheet, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var dvs = GetSheet(worksheetPart).GetFirstChild<DataValidations>();
+                if (dvs == null) continue;
+
+                var dvList = dvs.Elements<DataValidation>().ToList();
+                for (int i = 0; i < dvList.Count; i++)
+                    results.Add(DataValidationToNode(sheetName, dvList[i], i + 1));
+            }
+            return results;
+        }
+
+        // Handle comment queries
+        if (elementName is "comment" or "note")
+        {
+            foreach (var (sheetName, worksheetPart) in GetWorksheets())
+            {
+                if (parsed.Sheet != null && !sheetName.Equals(parsed.Sheet, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var commentsPart = worksheetPart.WorksheetCommentsPart;
+                if (commentsPart?.Comments == null) continue;
+
+                var cmtList = commentsPart.Comments.GetFirstChild<CommentList>();
+                if (cmtList == null) continue;
+
+                var cmtElements = cmtList.Elements<Comment>().ToList();
+                for (int i = 0; i < cmtElements.Count; i++)
+                    results.Add(CommentToNode(sheetName, cmtElements[i], commentsPart.Comments, i + 1));
+            }
+            return results;
+        }
+
+        // Handle table queries
+        if (elementName is "table" or "listobject")
+        {
+            foreach (var (sheetName, worksheetPart) in GetWorksheets())
+            {
+                if (parsed.Sheet != null && !sheetName.Equals(parsed.Sheet, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var tableParts = worksheetPart.TableDefinitionParts.ToList();
+                for (int i = 0; i < tableParts.Count; i++)
+                    results.Add(TableToNode(sheetName, worksheetPart, i + 1, 0));
+            }
+            return results;
+        }
 
         foreach (var (sheetName, worksheetPart) in GetWorksheets())
         {

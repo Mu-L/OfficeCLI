@@ -70,6 +70,97 @@ public partial class WordHandler
         return new Run(new Drawing(inline));
     }
 
+    private static Run CreateAnchorImageRun(string relationshipId, long cx, long cy, string altText,
+        string wrap, long hPos, long vPos,
+        DW.HorizontalRelativePositionValues hRel, DW.VerticalRelativePositionValues vRel,
+        bool behindText)
+    {
+        OpenXmlElement wrapElement = wrap.ToLowerInvariant() switch
+        {
+            "square" => new DW.WrapSquare { WrapText = DW.WrapTextValues.BothSides },
+            "tight" => new DW.WrapTight(new DW.WrapPolygon(
+                new DW.StartPoint { X = 0, Y = 0 },
+                new DW.LineTo { X = 21600, Y = 0 },
+                new DW.LineTo { X = 21600, Y = 21600 },
+                new DW.LineTo { X = 0, Y = 21600 },
+                new DW.LineTo { X = 0, Y = 0 }
+            ) { Edited = false }),
+            "through" => new DW.WrapThrough(new DW.WrapPolygon(
+                new DW.StartPoint { X = 0, Y = 0 },
+                new DW.LineTo { X = 21600, Y = 0 },
+                new DW.LineTo { X = 21600, Y = 21600 },
+                new DW.LineTo { X = 0, Y = 21600 },
+                new DW.LineTo { X = 0, Y = 0 }
+            ) { Edited = false }),
+            "topandbottom" or "topbottom" => new DW.WrapTopBottom(),
+            _ => new DW.WrapNone() as OpenXmlElement
+        };
+
+        var anchor = new DW.Anchor(
+            new DW.SimplePosition { X = 0, Y = 0 },
+            new DW.HorizontalPosition(new DW.PositionOffset(hPos.ToString()))
+                { RelativeFrom = hRel },
+            new DW.VerticalPosition(new DW.PositionOffset(vPos.ToString()))
+                { RelativeFrom = vRel },
+            new DW.Extent { Cx = cx, Cy = cy },
+            new DW.EffectExtent { LeftEdge = 0, TopEdge = 0, RightEdge = 0, BottomEdge = 0 },
+            wrapElement,
+            new DW.DocProperties { Id = (uint)Environment.TickCount, Name = altText, Description = altText },
+            new DW.NonVisualGraphicFrameDrawingProperties(
+                new A.GraphicFrameLocks { NoChangeAspect = true }),
+            new A.Graphic(
+                new A.GraphicData(
+                    new PIC.Picture(
+                        new PIC.NonVisualPictureProperties(
+                            new PIC.NonVisualDrawingProperties { Id = 0U, Name = altText },
+                            new PIC.NonVisualPictureDrawingProperties()),
+                        new PIC.BlipFill(
+                            new A.Blip { Embed = relationshipId, CompressionState = A.BlipCompressionValues.Print },
+                            new A.Stretch(new A.FillRectangle())),
+                        new PIC.ShapeProperties(
+                            new A.Transform2D(
+                                new A.Offset { X = 0L, Y = 0L },
+                                new A.Extents { Cx = cx, Cy = cy }),
+                            new A.PresetGeometry(new A.AdjustValueList())
+                                { Preset = A.ShapeTypeValues.Rectangle })
+                    )
+                ) { Uri = "http://schemas.openxmlformats.org/drawingml/2006/picture" }
+            )
+        )
+        {
+            BehindDoc = behindText,
+            DistanceFromTop = 0U,
+            DistanceFromBottom = 0U,
+            DistanceFromLeft = 114300U,
+            DistanceFromRight = 114300U,
+            SimplePos = false,
+            RelativeHeight = 1U,
+            AllowOverlap = true,
+            LayoutInCell = true,
+            Locked = false
+        };
+
+        return new Run(new Drawing(anchor));
+    }
+
+    private static DW.HorizontalRelativePositionValues ParseHorizontalRelative(string value) =>
+        value.ToLowerInvariant() switch
+        {
+            "page" => DW.HorizontalRelativePositionValues.Page,
+            "column" => DW.HorizontalRelativePositionValues.Column,
+            "character" => DW.HorizontalRelativePositionValues.Character,
+            _ => DW.HorizontalRelativePositionValues.Margin
+        };
+
+    private static DW.VerticalRelativePositionValues ParseVerticalRelative(string value) =>
+        value.ToLowerInvariant() switch
+        {
+            "page" => DW.VerticalRelativePositionValues.Page,
+            "paragraph" => DW.VerticalRelativePositionValues.Paragraph,
+            "line" => DW.VerticalRelativePositionValues.Line,
+            _ => DW.VerticalRelativePositionValues.Margin
+        };
+
     private static string GetDrawingInfo(Drawing drawing)
     {
         var docProps = drawing.Descendants<DW.DocProperties>().FirstOrDefault();

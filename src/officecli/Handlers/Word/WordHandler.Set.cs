@@ -23,6 +23,18 @@ public partial class WordHandler
             return unsupported;
         }
 
+        // Handle header/footer paths
+        var hfParts = ParsePath(path);
+        if (hfParts.Count >= 1)
+        {
+            var firstName = hfParts[0].Name.ToLowerInvariant();
+            if ((firstName == "header" || firstName == "footer") && hfParts.Count == 1)
+            {
+                SetHeaderFooter(firstName, (hfParts[0].Index ?? 1) - 1, properties, unsupported);
+                return unsupported;
+            }
+        }
+
         // TOC paths: /toc[N]
         var tocMatch = System.Text.RegularExpressions.Regex.Match(path, @"^/toc\[(\d+)\]$");
         if (tocMatch.Success)
@@ -273,6 +285,42 @@ public partial class WordHandler
         var element = NavigateToElement(parts);
         if (element == null)
             throw new ArgumentException($"Path not found: {path}");
+
+        if (element is BookmarkStart bkStart)
+        {
+            foreach (var (key, value) in properties)
+            {
+                switch (key.ToLowerInvariant())
+                {
+                    case "name":
+                        bkStart.Name = value;
+                        break;
+                    case "text":
+                        var bkId = bkStart.Id?.Value;
+                        if (bkId != null)
+                        {
+                            var toRemove = new List<OpenXmlElement>();
+                            var sib = bkStart.NextSibling();
+                            while (sib != null)
+                            {
+                                if (sib is BookmarkEnd bkEnd && bkEnd.Id?.Value == bkId)
+                                    break;
+                                toRemove.Add(sib);
+                                sib = sib.NextSibling();
+                            }
+                            foreach (var el in toRemove) el.Remove();
+                            bkStart.InsertAfterSelf(new Run(new Text(value) { Space = SpaceProcessingModeValues.Preserve }));
+                        }
+                        break;
+                    default:
+                        unsupported.Add(key);
+                        break;
+                }
+            }
+
+            _doc.MainDocumentPart?.Document?.Save();
+            return unsupported;
+        }
 
         if (element is Run run)
         {
@@ -761,5 +809,101 @@ public partial class WordHandler
 
         _doc.MainDocumentPart?.Document?.Save();
         return unsupported;
+    }
+
+    private void SetHeaderFooter(string kind, int index, Dictionary<string, string> properties, List<string> unsupported)
+    {
+        var mainPart = _doc.MainDocumentPart!;
+        OpenXmlCompositeElement? container;
+
+        if (kind == "header")
+        {
+            var part = mainPart.HeaderParts.ElementAtOrDefault(index)
+                ?? throw new ArgumentException($"Header not found: /header[{index + 1}]");
+            container = part.Header;
+        }
+        else
+        {
+            var part = mainPart.FooterParts.ElementAtOrDefault(index)
+                ?? throw new ArgumentException($"Footer not found: /footer[{index + 1}]");
+            container = part.Footer;
+        }
+
+        if (container == null)
+            throw new ArgumentException($"{kind} content not found at index {index + 1}");
+
+        foreach (var (key, value) in properties)
+        {
+            switch (key.ToLowerInvariant())
+            {
+                case "text":
+                {
+                    var firstPara = container.Elements<Paragraph>().FirstOrDefault();
+                    if (firstPara == null)
+                    {
+                        firstPara = new Paragraph();
+                        container.AppendChild(firstPara);
+                    }
+                    RunProperties? existingRProps = null;
+                    var existingRun = firstPara.Elements<Run>().FirstOrDefault();
+                    if (existingRun?.RunProperties != null)
+                        existingRProps = (RunProperties)existingRun.RunProperties.CloneNode(true);
+                    foreach (var r in firstPara.Elements<Run>().ToList()) r.Remove();
+                    var newRun = new Run();
+                    if (existingRProps != null)
+                        newRun.AppendChild(existingRProps);
+                    newRun.AppendChild(new Text(value) { Space = SpaceProcessingModeValues.Preserve });
+                    firstPara.AppendChild(newRun);
+                    break;
+                }
+                case "font":
+                    foreach (var run in container.Descendants<Run>())
+                        EnsureRunProperties(run).RunFonts = new RunFonts { Ascii = value, HighAnsi = value, EastAsia = value };
+                    break;
+                case "size":
+                    foreach (var run in container.Descendants<Run>())
+                        EnsureRunProperties(run).FontSize = new FontSize { Val = (int.Parse(value) * 2).ToString() };
+                    break;
+                case "bold":
+                    foreach (var run in container.Descendants<Run>())
+                        EnsureRunProperties(run).Bold = bool.Parse(value) ? new Bold() : null;
+                    break;
+                case "italic":
+                    foreach (var run in container.Descendants<Run>())
+                        EnsureRunProperties(run).Italic = bool.Parse(value) ? new Italic() : null;
+                    break;
+                case "color":
+                    foreach (var run in container.Descendants<Run>())
+                        EnsureRunProperties(run).Color = new Color { Val = value.ToUpperInvariant() };
+                    break;
+                case "alignment":
+                {
+                    var firstPara = container.Elements<Paragraph>().FirstOrDefault();
+                    if (firstPara != null)
+                    {
+                        var pProps = firstPara.ParagraphProperties ?? firstPara.PrependChild(new ParagraphProperties());
+                        pProps.Justification = new Justification
+                        {
+                            Val = value.ToLowerInvariant() switch
+                            {
+                                "center" => JustificationValues.Center,
+                                "right" => JustificationValues.Right,
+                                "justify" => JustificationValues.Both,
+                                _ => JustificationValues.Left
+                            }
+                        };
+                    }
+                    break;
+                }
+                default:
+                    unsupported.Add(key);
+                    break;
+            }
+        }
+
+        if (kind == "header")
+            mainPart.HeaderParts.ElementAt(index).Header?.Save();
+        else
+            mainPart.FooterParts.ElementAt(index).Footer?.Save();
     }
 }

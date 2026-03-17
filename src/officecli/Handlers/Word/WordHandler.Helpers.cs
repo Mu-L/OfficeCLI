@@ -270,4 +270,22 @@ public partial class WordHandler
     {
         return run.RunProperties ?? run.PrependChild(new RunProperties());
     }
+
+    private static string GetBookmarkText(BookmarkStart bkStart)
+    {
+        var bkId = bkStart.Id?.Value;
+        if (bkId == null) return "";
+
+        var sb = new System.Text.StringBuilder();
+        var sibling = bkStart.NextSibling();
+        while (sibling != null)
+        {
+            if (sibling is BookmarkEnd bkEnd && bkEnd.Id?.Value == bkId)
+                break;
+            if (sibling is Run run)
+                sb.Append(string.Concat(run.Descendants<Text>().Select(t => t.Text)));
+            sibling = sibling.NextSibling();
+        }
+        return sb.ToString();
+    }
 }

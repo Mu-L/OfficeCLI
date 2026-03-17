@@ -88,7 +88,7 @@ public partial class WordHandler
         return node;
     }
 
-    private record PathSegment(string Name, int? Index);
+    private record PathSegment(string Name, int? Index, string? StringIndex = null);
 
     private static List<PathSegment> ParsePath(string path)
     {
@@ -102,7 +102,10 @@ public partial class WordHandler
             {
                 var name = part[..bracketIdx];
                 var indexStr = part[(bracketIdx + 1)..^1];
-                segments.Add(new PathSegment(name, int.Parse(indexStr)));
+                if (int.TryParse(indexStr, out var idx))
+                    segments.Add(new PathSegment(name, idx));
+                else
+                    segments.Add(new PathSegment(name, null, indexStr));
             }
             else
             {
@@ -118,6 +121,15 @@ public partial class WordHandler
         if (segments.Count == 0) return null;
 
         var first = segments[0];
+
+        // Handle bookmark[Name] as top-level path
+        if (first.Name.ToLowerInvariant() == "bookmark" && first.StringIndex != null)
+        {
+            var body = _doc.MainDocumentPart?.Document?.Body;
+            return body?.Descendants<BookmarkStart>()
+                .FirstOrDefault(b => b.Name?.Value == first.StringIndex);
+        }
+
         OpenXmlElement? current = first.Name.ToLowerInvariant() switch
         {
             "body" => _doc.MainDocumentPart?.Document?.Body,
@@ -167,6 +179,17 @@ public partial class WordHandler
     private DocumentNode ElementToNode(OpenXmlElement element, string path, int depth)
     {
         var node = new DocumentNode { Path = path, Type = element.LocalName };
+
+        if (element is BookmarkStart bkStart)
+        {
+            node.Type = "bookmark";
+            node.Format["name"] = bkStart.Name?.Value ?? "";
+            node.Format["id"] = bkStart.Id?.Value ?? "";
+            var bkText = GetBookmarkText(bkStart);
+            if (!string.IsNullOrEmpty(bkText))
+                node.Text = bkText;
+            return node;
+        }
 
         if (element is Paragraph para)
         {
