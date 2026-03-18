@@ -952,23 +952,23 @@ public class WordFunctionalTests : IDisposable
 
         // 2. Get + Verify
         var node = _handler.Get("/body/p[1]");
-        ((string)node.Format["leftIndent"]).Should().Be("720");
+        ((string)node.Format["leftindent"]).Should().Be("720");
 
         // 3. Set (modify + add right indent and hanging)
         _handler.Set("/body/p[1]", new() { ["leftindent"] = "1440", ["rightindent"] = "720", ["hanging"] = "360" });
 
         // 4. Get + Verify
         node = _handler.Get("/body/p[1]");
-        ((string)node.Format["leftIndent"]).Should().Be("1440");
-        ((string)node.Format["rightIndent"]).Should().Be("720");
-        ((string)node.Format["hangingIndent"]).Should().Be("360");
+        ((string)node.Format["leftindent"]).Should().Be("1440");
+        ((string)node.Format["rightindent"]).Should().Be("720");
+        ((string)node.Format["hangingindent"]).Should().Be("360");
 
         // 5. Persistence
         Reopen();
         node = _handler.Get("/body/p[1]");
-        ((string)node.Format["leftIndent"]).Should().Be("1440");
-        ((string)node.Format["rightIndent"]).Should().Be("720");
-        ((string)node.Format["hangingIndent"]).Should().Be("360");
+        ((string)node.Format["leftindent"]).Should().Be("1440");
+        ((string)node.Format["rightindent"]).Should().Be("720");
+        ((string)node.Format["hangingindent"]).Should().Be("360");
     }
 
     // ==================== Superscript/Subscript Lifecycle ====================
@@ -1009,30 +1009,30 @@ public class WordFunctionalTests : IDisposable
 
         // 2. Get + Verify
         var node = _handler.Get("/body/p[1]");
-        ((bool)node.Format["keepNext"]).Should().BeTrue();
+        ((bool)node.Format["keepnext"]).Should().BeTrue();
 
         // 3. Set (add more flow controls)
         _handler.Set("/body/p[1]", new() { ["keeplines"] = "true", ["pagebreakbefore"] = "true", ["widowcontrol"] = "true" });
 
         // 4. Get + Verify
         node = _handler.Get("/body/p[1]");
-        ((bool)node.Format["keepNext"]).Should().BeTrue();
-        ((bool)node.Format["keepLines"]).Should().BeTrue();
-        ((bool)node.Format["pageBreakBefore"]).Should().BeTrue();
-        ((bool)node.Format["widowControl"]).Should().BeTrue();
+        ((bool)node.Format["keepnext"]).Should().BeTrue();
+        ((bool)node.Format["keeplines"]).Should().BeTrue();
+        ((bool)node.Format["pagebreakbefore"]).Should().BeTrue();
+        ((bool)node.Format["widowcontrol"]).Should().BeTrue();
 
         // 5. Set (remove)
         _handler.Set("/body/p[1]", new() { ["keepnext"] = "false" });
 
         // 6. Verify removed
         node = _handler.Get("/body/p[1]");
-        node.Format.Should().NotContainKey("keepNext");
+        node.Format.Should().NotContainKey("keepnext");
 
         // 7. Persistence
         Reopen();
         node = _handler.Get("/body/p[1]");
-        ((bool)node.Format["keepLines"]).Should().BeTrue();
-        ((bool)node.Format["pageBreakBefore"]).Should().BeTrue();
+        ((bool)node.Format["keeplines"]).Should().BeTrue();
+        ((bool)node.Format["pagebreakbefore"]).Should().BeTrue();
     }
 
     // ==================== Section Break Lifecycle ====================
@@ -1050,8 +1050,8 @@ public class WordFunctionalTests : IDisposable
         var sec = _handler.Get("/section[1]");
         sec.Type.Should().Be("section");
         ((string)sec.Format["type"]).Should().Be("nextPage");
-        sec.Format.Should().ContainKey("pageWidth");
-        sec.Format.Should().ContainKey("pageHeight");
+        sec.Format.Should().ContainKey("pagewidth");
+        sec.Format.Should().ContainKey("pageheight");
 
         // 3. Set (modify section properties)
         _handler.Set("/section[1]", new() { ["type"] = "continuous", ["margintop"] = "720" });
@@ -1059,13 +1059,13 @@ public class WordFunctionalTests : IDisposable
         // 4. Get + Verify
         sec = _handler.Get("/section[1]");
         ((string)sec.Format["type"]).Should().Be("continuous");
-        ((int)sec.Format["marginTop"]).Should().Be(720);
+        ((int)sec.Format["margintop"]).Should().Be(720);
 
         // 5. Persistence
         Reopen();
         sec = _handler.Get("/section[1]");
         ((string)sec.Format["type"]).Should().Be("continuous");
-        ((int)sec.Format["marginTop"]).Should().Be(720);
+        ((int)sec.Format["margintop"]).Should().Be(720);
     }
 
     // ==================== Footnote Lifecycle ====================

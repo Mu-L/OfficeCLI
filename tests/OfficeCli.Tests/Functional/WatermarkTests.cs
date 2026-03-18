@@ -60,7 +60,7 @@ public class WatermarkTests : IDisposable
 
         var node = _handler.Get("/watermark");
         node.Format["text"].Should().Be("CONFIDENTIAL");
-        node.Format["color"].ToString().Should().Contain("FF0000".ToLowerInvariant());
+        node.Format["color"].ToString().Should().Contain("FF0000");
     }
 
     [Fact]
@@ -93,10 +93,10 @@ public class WatermarkTests : IDisposable
         _handler.Add("/body", "paragraph", null, new() { ["text"] = "Content" });
         _handler.Add("/", "watermark", null, new() { ["text"] = "DRAFT", ["color"] = "silver" });
 
-        _handler.Set("/watermark", new() { ["color"] = "ff0000" });
+        _handler.Set("/watermark", new() { ["color"] = "FF0000" });
 
         var node = _handler.Get("/watermark");
-        node.Format["color"].ToString().Should().Contain("ff0000");
+        node.Format["color"].ToString().Should().Contain("FF0000");
     }
 
     [Fact]

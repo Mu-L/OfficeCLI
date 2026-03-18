@@ -300,9 +300,9 @@ public partial class BugHuntTests
 
         var node = _wordHandler.Get("/body/p[1]/r[1]");
 
-        node.Format.Should().ContainKey("smallCaps",
-            "Get should return smallCaps for a run that has smallcaps set, " +
-            "but ElementToNode doesn't extract smallCaps");
+        node.Format.Should().ContainKey("smallcaps",
+            "Get should return smallcaps for a run that has smallcaps set, " +
+            "but ElementToNode doesn't extract smallcaps");
     }
 
     // ===========================================================================================
@@ -420,7 +420,7 @@ public partial class BugHuntTests
 
         var node = _wordHandler.Get("/body/p[1]");
 
-        node.Format.Should().ContainKey("leftIndent",
-            "Get should return leftIndent for a paragraph that has it set");
+        node.Format.Should().ContainKey("leftindent",
+            "Get should return leftindent for a paragraph that has it set");
     }
 }

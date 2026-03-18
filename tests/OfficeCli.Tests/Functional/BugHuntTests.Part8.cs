@@ -387,7 +387,7 @@ public partial class BugHuntTests
         }
     }
 
-    // BUG #1302: PPTX Add shape doesn't support "strikethrough"
+    // BUG #1302: PPTX Add shape doesn't support "strike"
     [Fact]
     public void Bug1302_Pptx_Add_Shape_StrikethroughNotSupported()
     {
@@ -401,12 +401,12 @@ public partial class BugHuntTests
             handler.Add("/slide[1]", "shape", null, new()
             {
                 ["text"] = "Struck",
-                ["strikethrough"] = "sngStrike"
+                ["strike"] = "sngStrike"
             });
 
             var node = handler.Get("/slide[1]/shape[2]");
 
-            node.Format.Should().ContainKey("strikethrough",
+            node.Format.Should().ContainKey("strike",
                 "PPTX Add shape should support 'strikethrough' property during creation, " +
                 "since Set supports it via ShapeProperties.cs");
         }
@@ -453,7 +453,7 @@ public partial class BugHuntTests
         }
     }
 
-    // BUG #1304: PPTX table cell Set doesn't support "strikethrough" propagation
+    // BUG #1304: PPTX table cell Set doesn't support "strike" propagation
     [Fact]
     public void Bug1304_Pptx_Set_TableCell_StrikethroughSupported()
     {
@@ -471,10 +471,10 @@ public partial class BugHuntTests
 
             var unsupported = handler.Set("/slide[1]/table[1]/tr[1]/tc[1]", new()
             {
-                ["strikethrough"] = "sngStrike"
+                ["strike"] = "sngStrike"
             });
 
-            unsupported.Should().NotContain("strikethrough",
+            unsupported.Should().NotContain("strike",
                 "PPTX table cell Set should support 'strikethrough'");
         }
         finally

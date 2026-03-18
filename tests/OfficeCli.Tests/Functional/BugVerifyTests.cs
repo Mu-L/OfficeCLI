@@ -92,7 +92,7 @@ public class BugVerifyTests : IDisposable
         Thread.CurrentThread.CurrentCulture = new CultureInfo("de-DE");
         using var handler = new WordHandler(_docxPath, true);
         handler.Add("/body", "paragraph", null, new() { ["text"] = "test" });
-        var act = () => handler.Set("/body/p[1]", new() { ["firstLineIndent"] = "720.5" });
+        var act = () => handler.Set("/body/p[1]", new() { ["firstlineindent"] = "720.5" });
         act.Should().NotThrow("indent should parse '720.5' regardless of locale");
     }
 
