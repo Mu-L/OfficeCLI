@@ -92,6 +92,7 @@ officecli set doc.pptx '/slide[1]/cSld/spTree/sp[1]/txBody/p[1]/r[1]/rPr[1]/soli
 | Word TOC | `/toc[N]` | `levels`, `hyperlinks`(bool), `pagenumbers`(bool) |
 | Word section | `/section[N]` | `type`(nextPage\|continuous\|evenPage\|oddPage), `pagewidth`, `pageheight`, `orientation`, `marginTop/Bottom/Left/Right` |
 | Word style | `/styles/StyleId` | `name`, `basedon`, `next`, `font`, `size`, `bold`, `italic`, `color`, `alignment`, `spacebefore`, `spaceafter` |
+| Word watermark | `/watermark` | `text`, `color`, `font`, `opacity`, `rotation` (add replaces existing; one per document) |
 | Word chart | `/chart[N]` | `title`, `legend`, `categories`, `data`, `series1..N`, `colors`, `dataLabels`, `axisTitle`, `catTitle`, `axisMin`, `axisMax`, `majorUnit`, `axisNumFmt` |
 | Excel cell | `/Sheet1/A1` | `value`, `formula`, `clear`, `link`, `font.bold/italic/strike/underline/color/size/name`, `fill`(hex), `border.all/left/right/top/bottom`(thin\|medium\|thick\|double\|none), `border.color`, `alignment.horizontal/vertical/wrapText`, `numFmt`, ... |
 | Excel merge | `/Sheet1/A1:D1` | `merge`(bool) |
