@@ -188,7 +188,7 @@ public class BugHuntPart23 : IDisposable
         });
 
         var sizeStr = _excelHandler.Get("/Sheet1/A1").Format["font.size"]?.ToString();
-        sizeStr.Should().Be("16", "font.size should return plain number, not 'pt' suffix");
+        sizeStr.Should().Be("16pt", "font.size should return a unit-qualified pt string");
     }
 
     // BUG: font.color ARGB prefix — returns 8-char "FFFF0000" instead of 6-char "FF0000"

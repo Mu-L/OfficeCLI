@@ -419,14 +419,14 @@ public class BugHuntPart32 : IDisposable
 
         // 4. Get + Verify modification
         var node = _excelHandler.Get("/Sheet1");
-        node.Format.Should().ContainKey("autofilter");
-        node.Format["autofilter"].ToString().Should().Be("A1:B2");
+        node.Format.Should().ContainKey("autoFilter");
+        node.Format["autoFilter"].ToString().Should().Be("A1:B2");
 
         // 5. Reopen + Verify persistence
         ReopenExcel();
         var persisted = _excelHandler.Get("/Sheet1");
-        persisted.Format.Should().ContainKey("autofilter");
-        persisted.Format["autofilter"].ToString().Should().Be("A1:B2");
+        persisted.Format.Should().ContainKey("autoFilter");
+        persisted.Format["autoFilter"].ToString().Should().Be("A1:B2");
     }
 
     // =================================================================

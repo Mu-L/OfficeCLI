@@ -321,24 +321,24 @@ public class BugHuntPart31 : IDisposable
 
         // 2. Get + Verify initial state
         var node1 = _wordHandler.Get("/body/p[1]");
-        node1.Format.Should().ContainKey("spacebefore");
-        node1.Format.Should().ContainKey("spaceafter");
-        node1.Format["spacebefore"].ToString().Should().Be("240");
-        node1.Format["spaceafter"].ToString().Should().Be("120");
+        node1.Format.Should().ContainKey("spaceBefore");
+        node1.Format.Should().ContainKey("spaceAfter");
+        node1.Format["spaceBefore"].ToString().Should().Be("240");
+        node1.Format["spaceAfter"].ToString().Should().Be("120");
 
         // 3. Set (modify spacing)
         _wordHandler.Set("/body/p[1]", new() { ["spacebefore"] = "480" });
 
         // 4. Get + Verify modification
         var node2 = _wordHandler.Get("/body/p[1]");
-        node2.Format.Should().ContainKey("spacebefore");
-        node2.Format["spacebefore"].ToString().Should().Be("480");
+        node2.Format.Should().ContainKey("spaceBefore");
+        node2.Format["spaceBefore"].ToString().Should().Be("480");
 
         // 5. Reopen + Verify persistence
         ReopenWord();
         var node3 = _wordHandler.Get("/body/p[1]");
-        node3.Format.Should().ContainKey("spacebefore");
-        node3.Format["spacebefore"].ToString().Should().Be("480");
+        node3.Format.Should().ContainKey("spaceBefore");
+        node3.Format["spaceBefore"].ToString().Should().Be("480");
     }
 
     // EDGE CASE: Word multiple runs in one paragraph.
@@ -560,8 +560,8 @@ public class BugHuntPart31 : IDisposable
 
         // 2. Get + Verify initial state
         var node1 = _excelHandler.Get("/Sheet1/A1");
-        node1.Format.Should().ContainKey("halign");
-        node1.Format["halign"].ToString().Should().Be("center");
+        node1.Format.Should().ContainKey("alignment.horizontal");
+        node1.Format["alignment.horizontal"].ToString().Should().Be("center");
         node1.Format.Should().ContainKey("alignment.wrapText");
         node1.Format["alignment.wrapText"].Should().Be(true);
 
@@ -570,14 +570,14 @@ public class BugHuntPart31 : IDisposable
 
         // 4. Get + Verify modification
         var node2 = _excelHandler.Get("/Sheet1/A1");
-        node2.Format.Should().ContainKey("halign");
-        node2.Format["halign"].ToString().Should().Be("right");
+        node2.Format.Should().ContainKey("alignment.horizontal");
+        node2.Format["alignment.horizontal"].ToString().Should().Be("right");
 
         // 5. Reopen + Verify persistence
         ReopenExcel();
         var node3 = _excelHandler.Get("/Sheet1/A1");
-        node3.Format.Should().ContainKey("halign");
-        node3.Format["halign"].ToString().Should().Be("right");
+        node3.Format.Should().ContainKey("alignment.horizontal");
+        node3.Format["alignment.horizontal"].ToString().Should().Be("right");
         node3.Format.Should().ContainKey("alignment.wrapText");
         node3.Format["alignment.wrapText"].Should().Be(true);
     }

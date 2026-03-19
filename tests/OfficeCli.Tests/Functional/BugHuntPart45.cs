@@ -536,10 +536,10 @@ public class BugHuntPart45 : IDisposable
         });
 
         var node = handler.Get("/Sheet1/A1");
-        node.Format.Should().ContainKey("halign",
-            because: "halign should be readable after Add");
-        node.Format["halign"].ToString().Should().Be("center",
-            because: "halign=center should roundtrip correctly");
+        node.Format.Should().ContainKey("alignment.horizontal",
+            because: "alignment.horizontal should be the canonical Excel key");
+        node.Format["alignment.horizontal"].ToString().Should().Be("center",
+            because: "alignment.horizontal=center should roundtrip correctly");
     }
 
     // =====================================================================
@@ -561,8 +561,8 @@ public class BugHuntPart45 : IDisposable
         var node = handler.Get("/Sheet1/A1");
         // BUG: Set uses "wrap" but Get returns "alignment.wrapText"
         // Key naming inconsistency between Set and Get
-        node.Format.Should().ContainKey("wrap",
-            because: "Set uses 'wrap' key so Get should use same key");
+        node.Format.Should().ContainKey("alignment.wrapText",
+            because: "alignment.wrapText should be the canonical Excel key");
     }
 
     // =====================================================================
@@ -650,8 +650,8 @@ public class BugHuntPart45 : IDisposable
         var node = handler.Get("/body/p[1]");
         // BUG: Key is "spacebefore" (lowercase) not "spaceBefore" (camelCase)
         // Inconsistent with PPTX which uses camelCase "spaceBefore"
-        node.Format.Should().ContainKey("spacebefore",
-            because: "Word handler uses lowercase keys for spacebefore");
+        node.Format.Should().ContainKey("spaceBefore",
+            because: "Word handler should expose camelCase spaceBefore");
     }
 
     // =====================================================================
@@ -672,8 +672,8 @@ public class BugHuntPart45 : IDisposable
         var node = handler.Get("/body/p[1]");
         // BUG: Key is "linespacing" (lowercase) not "lineSpacing" (camelCase)
         // Inconsistent with PPTX which uses camelCase "lineSpacing"
-        node.Format.Should().ContainKey("linespacing",
-            because: "Word handler uses lowercase keys for linespacing");
+        node.Format.Should().ContainKey("lineSpacing",
+            because: "Word handler should expose camelCase lineSpacing");
     }
 
     // =====================================================================

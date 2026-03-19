@@ -463,18 +463,18 @@ public class ExcelFunctionalTests : IDisposable
 
         // 3. Get + Verify
         var sheet = _handler.Get("/Sheet1");
-        sheet.Format.Should().ContainKey("autofilter");
-        ((string)sheet.Format["autofilter"]).Should().Be("A1:B10");
+        sheet.Format.Should().ContainKey("autoFilter");
+        ((string)sheet.Format["autoFilter"]).Should().Be("A1:B10");
 
         // 4. Set (modify range)
         _handler.Set("/Sheet1/autofilter", new() { ["range"] = "A1:B20" });
         sheet = _handler.Get("/Sheet1");
-        ((string)sheet.Format["autofilter"]).Should().Be("A1:B20");
+        ((string)sheet.Format["autoFilter"]).Should().Be("A1:B20");
 
         // 5. Persistence
         Reopen();
         sheet = _handler.Get("/Sheet1");
-        ((string)sheet.Format["autofilter"]).Should().Be("A1:B20");
+        ((string)sheet.Format["autoFilter"]).Should().Be("A1:B20");
     }
 
     // ==================== ColorScale Lifecycle ====================

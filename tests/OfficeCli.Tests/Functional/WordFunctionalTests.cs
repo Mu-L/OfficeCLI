@@ -1050,8 +1050,8 @@ public class WordFunctionalTests : IDisposable
         var sec = _handler.Get("/section[1]");
         sec.Type.Should().Be("section");
         ((string)sec.Format["type"]).Should().Be("nextPage");
-        sec.Format.Should().ContainKey("pagewidth");
-        sec.Format.Should().ContainKey("pageheight");
+        sec.Format.Should().ContainKey("pageWidth");
+        sec.Format.Should().ContainKey("pageHeight");
 
         // 3. Set (modify section properties)
         _handler.Set("/section[1]", new() { ["type"] = "continuous", ["margintop"] = "720" });
@@ -1185,7 +1185,7 @@ public class WordFunctionalTests : IDisposable
         var style = _handler.Get("/styles/MyCustomStyle");
         style.Type.Should().Be("style");
         ((string)style.Format["font"]).Should().Be("Arial");
-        ((int)style.Format["size"]).Should().Be(14);
+        ((string)style.Format["size"]).Should().Be("14pt");
         ((bool)style.Format["bold"]).Should().BeTrue();
         ((string)style.Format["color"]).Should().Be("FF0000");
         ((string)style.Format["alignment"]).Should().Be("center");
@@ -1197,7 +1197,7 @@ public class WordFunctionalTests : IDisposable
         // 4. Get + Verify
         style = _handler.Get("/styles/MyCustomStyle");
         ((string)style.Format["font"]).Should().Be("Calibri");
-        ((int)style.Format["size"]).Should().Be(12);
+        ((string)style.Format["size"]).Should().Be("12pt");
         style.Format.Should().NotContainKey("bold");
 
         // 5. Apply style to paragraph + verify

@@ -127,8 +127,8 @@ public class BugHuntPart22 : IDisposable
         });
 
         var para = _wordHandler.Get("/body/p[1]");
-        para.Format.Should().ContainKey("linespacing",
-            "paragraph Get should expose linespacing when it's set");
+        para.Format.Should().ContainKey("lineSpacing",
+            "paragraph Get should expose camelCase lineSpacing when it's set");
     }
 
 
@@ -206,10 +206,10 @@ public class BugHuntPart22 : IDisposable
         section.Should().NotBeNull();
 
         // Default page size should always be present
-        section.Format.Should().ContainKey("pagewidth",
-            "section Get should include page width");
-        section.Format.Should().ContainKey("pageheight",
-            "section Get should include page height");
+        section.Format.Should().ContainKey("pageWidth",
+            "section Get should include camelCase pageWidth");
+        section.Format.Should().ContainKey("pageHeight",
+            "section Get should include camelCase pageHeight");
     }
 
 

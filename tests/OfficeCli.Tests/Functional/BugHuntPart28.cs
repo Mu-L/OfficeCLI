@@ -370,9 +370,9 @@ public class BugHuntPart28 : IDisposable
 
         var node = _wordHandler.Get("/body/p[1]");
         node.Format["alignment"]?.ToString().Should().Be("center");
-        node.Format["linespacing"]?.ToString().Should().Be("360");
-        node.Format.Should().ContainKey("spacebefore");
-        node.Format.Should().ContainKey("spaceafter");
+        node.Format["lineSpacing"]?.ToString().Should().Be("360");
+        node.Format.Should().ContainKey("spaceBefore");
+        node.Format.Should().ContainKey("spaceAfter");
         node.Format["leftindent"]?.ToString().Should().Be("720");
         node.Format["rightindent"]?.ToString().Should().Be("360");
         node.Format["hangingindent"]?.ToString().Should().Be("480");

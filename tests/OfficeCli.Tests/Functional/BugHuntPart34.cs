@@ -322,8 +322,8 @@ public class BugHuntPart34 : IDisposable
 
         // Get default section properties (should be portrait A4)
         var sec = handler.Get("/section[1]");
-        var origWidth = Convert.ToUInt32(sec.Format["pagewidth"]);
-        var origHeight = Convert.ToUInt32(sec.Format["pageheight"]);
+        var origWidth = Convert.ToUInt32(sec.Format["pageWidth"]);
+        var origHeight = Convert.ToUInt32(sec.Format["pageHeight"]);
 
         // Portrait: width < height
         origWidth.Should().BeLessThan(origHeight, "Default should be portrait");
@@ -333,8 +333,8 @@ public class BugHuntPart34 : IDisposable
 
         // Read back
         var updated = handler.Get("/section[1]");
-        var newWidth = Convert.ToUInt32(updated.Format["pagewidth"]);
-        var newHeight = Convert.ToUInt32(updated.Format["pageheight"]);
+        var newWidth = Convert.ToUInt32(updated.Format["pageWidth"]);
+        var newHeight = Convert.ToUInt32(updated.Format["pageHeight"]);
 
         // Bug: orientation is set but dimensions are NOT swapped
         // In landscape, width should be > height

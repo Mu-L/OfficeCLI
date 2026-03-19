@@ -213,8 +213,8 @@ public class BugHuntPart19 : IDisposable
         var cell = _excelHandler.Get("/Sheet1/A1");
         cell.Should().NotBeNull();
 
-        cell.Format.Should().ContainKey("halign",
-            "cell Get should include horizontal alignment when it's been set");
+        cell.Format.Should().ContainKey("alignment.horizontal",
+            "cell Get should include canonical alignment.horizontal when it's been set");
     }
 
 

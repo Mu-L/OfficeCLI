@@ -403,7 +403,7 @@ public class BugHuntPart29 : IDisposable
         _excelHandler.Set("/Sheet1/A1", new() { ["value"] = "Header" });
         _excelHandler.Set("/Sheet1", new() { ["autofilter"] = "A1:C1" });
 
-        _excelHandler.Get("/Sheet1").Format["autofilter"]?.ToString().Should().Be("A1:C1");
+        _excelHandler.Get("/Sheet1").Format["autoFilter"]?.ToString().Should().Be("A1:C1");
     }
 
     // =================================================================
@@ -498,7 +498,7 @@ public class BugHuntPart29 : IDisposable
         node.Format.Should().ContainKey("font.bold");
         node.Format.Should().ContainKey("font.italic");
         node.Format["font.name"]?.ToString().Should().Be("Arial");
-        node.Format["font.size"]?.ToString().Should().Be("20");
+        node.Format["font.size"]?.ToString().Should().Be("20pt");
         node.Format.Should().ContainKey("font.strike");
     }
 

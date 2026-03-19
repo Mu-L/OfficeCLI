@@ -523,8 +523,8 @@ public class BugHuntPart42 : IDisposable
         });
 
         var node = handler.Get("/Sheet1/A1");
-        node.Format.Should().ContainKey("format",
-            because: "number format should be readable after Add");
+        node.Format.Should().ContainKey("numberformat",
+            because: "numberformat should be the canonical Excel key after Add");
     }
 
     // =====================================================================
