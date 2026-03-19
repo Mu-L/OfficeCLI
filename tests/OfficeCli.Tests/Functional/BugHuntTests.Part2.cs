@@ -38,7 +38,7 @@ public partial class BugHuntTests
         node.Format.TryGetValue("effect", out var effect);
         // If the handler reads it back, it'll say "zoom" instead of "bounce"
         // because both use preset ID 21
-        (effect == "bounce" || effect == null).Should().BeTrue(
+        (effect?.ToString() == "bounce" || effect == null).Should().BeTrue(
             "bounce animation should roundtrip, but preset ID collision with zoom causes data loss");
     }
 
@@ -158,8 +158,8 @@ public partial class BugHuntTests
         _wordHandler.Add("/body", "p", null, new() { ["text"] = "Second" });
         _wordHandler.Add("/body", "p", null, new() { ["text"] = "Third" });
 
-        // Move third paragraph to position 1
-        var newPath = _wordHandler.Move("/body/p[3]", "/body", 1);
+        // Move third paragraph to position 0 (0-based index)
+        var newPath = _wordHandler.Move("/body/p[3]", "/body", 0);
 
         // The returned path should be valid (1-based)
         newPath.Should().Contain("p[1]",

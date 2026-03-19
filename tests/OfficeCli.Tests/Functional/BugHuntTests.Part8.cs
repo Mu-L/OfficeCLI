@@ -401,7 +401,7 @@ public partial class BugHuntTests
             handler.Add("/slide[1]", "shape", null, new()
             {
                 ["text"] = "Struck",
-                ["strike"] = "sngStrike"
+                ["strike"] = "single"
             });
 
             var node = handler.Get("/slide[1]/shape[2]");
@@ -471,7 +471,7 @@ public partial class BugHuntTests
 
             var unsupported = handler.Set("/slide[1]/table[1]/tr[1]/tc[1]", new()
             {
-                ["strike"] = "sngStrike"
+                ["strike"] = "single"
             });
 
             unsupported.Should().NotContain("strike",
