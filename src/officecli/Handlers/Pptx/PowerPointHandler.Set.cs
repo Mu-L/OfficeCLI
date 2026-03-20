@@ -962,6 +962,39 @@ public partial class PowerPointHandler
                         fbCNvPr?.SetAttribute(new OpenXmlAttribute("", "name", null!, value));
                         break;
                     }
+                    case "image" or "path" or "src" or "cover":
+                    {
+                        if (!File.Exists(value))
+                            throw new FileNotFoundException($"Image file not found: {value}");
+                        var imgExt = Path.GetExtension(value).ToLowerInvariant();
+                        var imgPartType = imgExt switch
+                        {
+                            ".png" => ImagePartType.Png,
+                            ".jpg" or ".jpeg" => ImagePartType.Jpeg,
+                            ".gif" => ImagePartType.Gif,
+                            ".bmp" => ImagePartType.Bmp,
+                            _ => throw new ArgumentException($"Unsupported image format: {imgExt}")
+                        };
+                        // Add new image part
+                        var newImagePart = zmSlidePart.AddImagePart(imgPartType);
+                        using (var imgStream = File.OpenRead(value))
+                            newImagePart.FeedData(imgStream);
+                        var newImgRelId = zmSlidePart.GetIdOfPart(newImagePart);
+                        var rNs2 = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+                        // Update blip in zmPr > blipFill
+                        var zmBlip = zmPr?.Descendants().FirstOrDefault(d => d.LocalName == "blip");
+                        zmBlip?.SetAttribute(new OpenXmlAttribute("r", "embed", rNs2, newImgRelId));
+                        // Update blip in fallback > blipFill
+                        var fbBlipFill = fallback?.Descendants().FirstOrDefault(d => d.LocalName == "blipFill");
+                        var fbBlip = fbBlipFill?.ChildElements.FirstOrDefault(e => e.LocalName == "blip");
+                        fbBlip?.SetAttribute(new OpenXmlAttribute("r", "embed", rNs2, newImgRelId));
+                        // Set imageType to "cover" so PowerPoint uses our image instead of auto-preview
+                        zmPr?.SetAttribute(new OpenXmlAttribute("", "imageType", null!, "cover"));
+                        break;
+                    }
+                    case "imagetype":
+                        zmPr?.SetAttribute(new OpenXmlAttribute("", "imageType", null!, value));
+                        break;
                     default:
                         unsupported.Add(key);
                         break;
