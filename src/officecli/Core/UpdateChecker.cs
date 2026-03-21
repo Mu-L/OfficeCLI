@@ -160,7 +160,16 @@ internal static class UpdateChecker
                 var oldPath = exePath + ".old";
                 try { File.Delete(oldPath); } catch { }
                 File.Move(exePath, oldPath);
-                File.Move(tempPath, exePath);
+                try
+                {
+                    File.Move(tempPath, exePath);
+                }
+                catch
+                {
+                    // Rollback: restore original if new file failed to move
+                    try { File.Move(oldPath, exePath); } catch { }
+                    return;
+                }
                 try { File.Delete(oldPath); } catch { }
             }
         }
@@ -193,7 +202,16 @@ internal static class UpdateChecker
             var oldPath = exePath + ".old";
             try { File.Delete(oldPath); } catch { }
             File.Move(exePath, oldPath);
-            File.Move(updatePath, exePath);
+            try
+            {
+                File.Move(updatePath, exePath);
+            }
+            catch
+            {
+                // Rollback: restore original
+                try { File.Move(oldPath, exePath); } catch { }
+                return;
+            }
             try { File.Delete(oldPath); } catch { }
         }
         catch { }
