@@ -379,12 +379,8 @@ public partial class WordHandler
 
         if (headerType == HeaderFooterValues.First)
         {
-            var settingsPart = mainPartH.DocumentSettingsPart
-                ?? mainPartH.AddNewPart<DocumentSettingsPart>();
-            settingsPart.Settings ??= new Settings();
-            if (settingsPart.Settings.GetFirstChild<TitlePage>() == null)
-                settingsPart.Settings.AppendChild(new TitlePage());
-            settingsPart.Settings.Save();
+            if (hSectPr.GetFirstChild<TitlePage>() == null)
+                hSectPr.AppendChild(new TitlePage());
         }
 
         var hIdx = mainPartH.HeaderParts.ToList().IndexOf(headerPart);
@@ -450,12 +446,8 @@ public partial class WordHandler
 
         if (footerType == HeaderFooterValues.First)
         {
-            var settingsPart = mainPartF.DocumentSettingsPart
-                ?? mainPartF.AddNewPart<DocumentSettingsPart>();
-            settingsPart.Settings ??= new Settings();
-            if (settingsPart.Settings.GetFirstChild<TitlePage>() == null)
-                settingsPart.Settings.AppendChild(new TitlePage());
-            settingsPart.Settings.Save();
+            if (fSectPr.GetFirstChild<TitlePage>() == null)
+                fSectPr.AppendChild(new TitlePage());
         }
 
         var fIdx = mainPartF.FooterParts.ToList().IndexOf(footerPart);
