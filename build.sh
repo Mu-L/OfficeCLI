@@ -2,12 +2,20 @@
 set -e
 
 PROJECT="src/officecli/officecli.csproj"
-ALL_TARGETS="osx-arm64:officecli-mac-arm64 osx-x64:officecli-mac-x64 linux-x64:officecli-linux-x64 linux-arm64:officecli-linux-arm64 win-x64:officecli-win-x64.exe"
+ALL_TARGETS="osx-arm64:officecli-mac-arm64 osx-x64:officecli-mac-x64 linux-x64:officecli-linux-x64 linux-arm64:officecli-linux-arm64 linux-musl-x64:officecli-linux-musl-x64 linux-musl-arm64:officecli-linux-musl-arm64 win-x64:officecli-win-x64.exe win-arm64:officecli-win-arm64.exe"
 
 # Detect current platform RID
 detect_local_rid() {
     local OS=$(uname -s | tr '[:upper:]' '[:lower:]')
     local ARCH=$(uname -m)
+    local LIBC="gnu"
+    if [ "$OS" = "linux" ]; then
+        if command -v ldd >/dev/null 2>&1 && ldd --version 2>&1 | grep -qi musl; then
+            LIBC="musl"
+        elif [ -f /etc/alpine-release ]; then
+            LIBC="musl"
+        fi
+    fi
     case "$OS" in
         darwin)
             case "$ARCH" in
@@ -16,8 +24,10 @@ detect_local_rid() {
             esac ;;
         linux)
             case "$ARCH" in
-                x86_64) echo "linux-x64" ;;
-                aarch64|arm64) echo "linux-arm64" ;;
+                x86_64)
+                    if [ "$LIBC" = "musl" ]; then echo "linux-musl-x64"; else echo "linux-x64"; fi ;;
+                aarch64|arm64)
+                    if [ "$LIBC" = "musl" ]; then echo "linux-musl-arm64"; else echo "linux-arm64"; fi ;;
             esac ;;
     esac
 }

@@ -18,8 +18,18 @@ case "$OS" in
         esac
         ;;
     linux)
+        # Detect musl libc (Alpine, etc.)
+        LIBC="gnu"
+        if command -v ldd >/dev/null 2>&1 && ldd --version 2>&1 | grep -qi musl; then
+            LIBC="musl"
+        elif [ -f /etc/alpine-release ]; then
+            LIBC="musl"
+        fi
         case "$ARCH" in
-            x86_64) RID="linux-x64" ;;
+            x86_64)
+                if [ "$LIBC" = "musl" ]; then RID="linux-musl-x64"; else RID="linux-x64"; fi ;;
+            aarch64|arm64)
+                if [ "$LIBC" = "musl" ]; then RID="linux-musl-arm64"; else RID="linux-arm64"; fi ;;
             *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
         esac
         ;;

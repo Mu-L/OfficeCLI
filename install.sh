@@ -17,9 +17,28 @@ case "$OS" in
         esac
         ;;
     linux)
+        # Detect musl libc (Alpine, etc.)
+        LIBC="gnu"
+        if command -v ldd >/dev/null 2>&1 && ldd --version 2>&1 | grep -qi musl; then
+            LIBC="musl"
+        elif [ -f /etc/alpine-release ]; then
+            LIBC="musl"
+        fi
         case "$ARCH" in
-            x86_64) ASSET="officecli-linux-x64" ;;
-            aarch64|arm64) ASSET="officecli-linux-arm64" ;;
+            x86_64)
+                if [ "$LIBC" = "musl" ]; then
+                    ASSET="officecli-linux-musl-x64"
+                else
+                    ASSET="officecli-linux-x64"
+                fi
+                ;;
+            aarch64|arm64)
+                if [ "$LIBC" = "musl" ]; then
+                    ASSET="officecli-linux-musl-arm64"
+                else
+                    ASSET="officecli-linux-arm64"
+                fi
+                ;;
             *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
         esac
         ;;

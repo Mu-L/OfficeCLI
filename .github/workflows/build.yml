@@ -23,6 +23,12 @@ jobs:
           - rid: linux-arm64
             name: officecli-linux-arm64
             os: ubuntu-latest
+          - rid: linux-musl-x64
+            name: officecli-linux-musl-x64
+            os: ubuntu-latest
+          - rid: linux-musl-arm64
+            name: officecli-linux-musl-arm64
+            os: ubuntu-latest
           - rid: win-x64
             name: officecli-win-x64.exe
             os: ubuntu-latest
