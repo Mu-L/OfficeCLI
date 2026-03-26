@@ -462,9 +462,8 @@ public partial class PowerPointHandler
                 sb.Append($"<g transform=\"translate({tx:0.##},{ty:0.##}) scale({sx},{sy})\">");
             }
 
-            int? phDefaultFontSize = ResolvePlaceholderFontSize(shape, part);
             RenderTextBodyFO(sb, shape.TextBody, themeColors, w, h,
-                lIns, tIns, rIns, bIns, valign, phDefaultFontSize);
+                lIns, tIns, rIns, bIns, valign, shape, part);
 
             if (isFlipH || isFlipV)
                 sb.Append("</g>");
@@ -558,7 +557,8 @@ public partial class PowerPointHandler
         Dictionary<string, string> themeColors,
         double shapeW, double shapeH,
         double lIns, double tIns, double rIns, double bIns,
-        string valign, int? defaultFontSizeHundredths, string? textColorOverride = null)
+        string valign, Shape? placeholderShape = null, OpenXmlPart? placeholderPart = null,
+        string? textColorOverride = null)
     {
         var paragraphs = textBody.Elements<Drawing.Paragraph>().ToList();
         if (paragraphs.Count == 0) return;
@@ -575,7 +575,13 @@ public partial class PowerPointHandler
             var firstRun = para.Elements<Drawing.Run>().FirstOrDefault();
             var rp = firstRun?.RunProperties;
 
-            double fontSizePt = defaultFontSizeHundredths.HasValue ? defaultFontSizeHundredths.Value / 100.0 : 18;
+            int? paraDefaultFontSize = null;
+            if (placeholderShape != null && placeholderPart != null)
+            {
+                int level = para.ParagraphProperties?.Level?.Value ?? 0;
+                paraDefaultFontSize = ResolvePlaceholderFontSize(placeholderShape, placeholderPart, level);
+            }
+            double fontSizePt = paraDefaultFontSize.HasValue ? paraDefaultFontSize.Value / 100.0 : 18;
             if (rp?.FontSize?.HasValue == true)
                 fontSizePt = rp.FontSize.Value / 100.0;
 
@@ -1115,7 +1121,7 @@ public partial class PowerPointHandler
                     // Render text at cell position with offset
                     sb.Append($"<g transform=\"translate({currentX:0.##},{currentY:0.##})\">");
                     RenderTextBodyFO(sb, textBody, themeColors, cellW, rowH,
-                        padL, padT, padR, padB, valign, null, textColorOverride);
+                        padL, padT, padR, padB, valign, textColorOverride: textColorOverride);
                     sb.Append("</g>");
                 }
 
@@ -1139,7 +1145,8 @@ public partial class PowerPointHandler
         Dictionary<string, string> themeColors,
         double shapeW, double shapeH,
         double lIns, double tIns, double rIns, double bIns,
-        string valign, int? defaultFontSizeHundredths, string? textColorOverride = null)
+        string valign, Shape? placeholderShape = null, OpenXmlPart? placeholderPart = null,
+        string? textColorOverride = null)
     {
         var paragraphs = textBody.Elements<Drawing.Paragraph>().ToList();
         if (paragraphs.Count == 0) return;
@@ -1260,8 +1267,14 @@ public partial class PowerPointHandler
                     if (font != null && !font.StartsWith("+", StringComparison.Ordinal))
                         styles.Add($"font-family:'{HtmlEncode(font)}'");
 
-                    // Size
-                    double fontSizePt = defaultFontSizeHundredths.HasValue ? defaultFontSizeHundredths.Value / 100.0 : 18;
+                    // Size — resolve per-paragraph from placeholder inheritance chain
+                    int? paraDefaultFontSize = null;
+                    if (placeholderShape != null && placeholderPart != null)
+                    {
+                        int level = para.ParagraphProperties?.Level?.Value ?? 0;
+                        paraDefaultFontSize = ResolvePlaceholderFontSize(placeholderShape, placeholderPart, level);
+                    }
+                    double fontSizePt = paraDefaultFontSize.HasValue ? paraDefaultFontSize.Value / 100.0 : 18;
                     if (rp?.FontSize?.HasValue == true)
                         fontSizePt = rp.FontSize.Value / 100.0;
                     styles.Add($"font-size:{fontSizePt:0.##}pt");

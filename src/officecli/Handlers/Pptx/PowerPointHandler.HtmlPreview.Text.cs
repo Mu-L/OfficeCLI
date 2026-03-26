@@ -15,10 +15,17 @@ public partial class PowerPointHandler
     // ==================== Text Rendering ====================
 
     private static void RenderTextBody(StringBuilder sb, OpenXmlElement textBody, Dictionary<string, string> themeColors,
-        int? defaultFontSizeHundredths = null)
+        Shape? placeholderShape = null, OpenXmlPart? placeholderPart = null)
     {
         foreach (var para in textBody.Elements<Drawing.Paragraph>())
         {
+            // Resolve per-paragraph font size based on paragraph level
+            int? defaultFontSizeHundredths = null;
+            if (placeholderShape != null && placeholderPart != null)
+            {
+                int level = para.ParagraphProperties?.Level?.Value ?? 0;
+                defaultFontSizeHundredths = ResolvePlaceholderFontSize(placeholderShape, placeholderPart, level);
+            }
             var paraStyles = new List<string>();
 
             var pProps = para.ParagraphProperties;

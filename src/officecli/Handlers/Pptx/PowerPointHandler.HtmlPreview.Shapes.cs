@@ -270,10 +270,7 @@ public partial class PowerPointHandler
                 : "";
             sb.Append($"<div class=\"shape-text valign-{valign}\"{textStyle}>");
 
-            // Resolve placeholder-based default font size for inheritance
-            int? phDefaultFontSize = ResolvePlaceholderFontSize(shape, part);
-
-            RenderTextBody(sb, shape.TextBody, themeColors, phDefaultFontSize);
+            RenderTextBody(sb, shape.TextBody, themeColors, shape, part);
             sb.Append("</div>");
         }
 
@@ -460,16 +457,15 @@ public partial class PowerPointHandler
     /// shape listStyle → slide layout placeholder → slide master placeholder → master text styles → OOXML defaults.
     /// Returns font size in hundredths of a point (e.g. 4400 = 44pt), or null if no override.
     /// </summary>
-    private static int? ResolvePlaceholderFontSize(Shape shape, OpenXmlPart part)
+    private static int? ResolvePlaceholderFontSize(Shape shape, OpenXmlPart part, int level = 0)
     {
         var ph = shape.NonVisualShapeProperties?.ApplicationNonVisualDrawingProperties
             ?.GetFirstChild<PlaceholderShape>();
         if (ph == null) return null; // Not a placeholder
 
-        // 1. Check shape's own list style for level 1 default run properties
+        // 1. Check shape's own list style for the paragraph's level
         var lstStyle = shape.TextBody?.GetFirstChild<Drawing.ListStyle>();
-        var lvl1 = lstStyle?.GetFirstChild<Drawing.Level1ParagraphProperties>();
-        var defRp = lvl1?.GetFirstChild<Drawing.DefaultRunProperties>();
+        var defRp = GetLevelDefRp(lstStyle, level);
         if (defRp?.FontSize?.HasValue == true)
             return defRp.FontSize.Value;
 
@@ -494,10 +490,9 @@ public partial class PowerPointHandler
                     if (cPh == null) continue;
                     if (!PlaceholderMatches(ph, cPh)) continue;
 
-                    // Check candidate's list style
+                    // Check candidate's list style at the correct level
                     var cLstStyle = candidate.TextBody?.GetFirstChild<Drawing.ListStyle>();
-                    var cLvl1 = cLstStyle?.GetFirstChild<Drawing.Level1ParagraphProperties>();
-                    var cDefRp = cLvl1?.GetFirstChild<Drawing.DefaultRunProperties>();
+                    var cDefRp = GetLevelDefRp(cLstStyle, level);
                     if (cDefRp?.FontSize?.HasValue == true)
                         return cDefRp.FontSize.Value;
                 }
@@ -517,8 +512,7 @@ public partial class PowerPointHandler
 
                 if (styleList != null)
                 {
-                    var sLvl1 = styleList.GetFirstChild<Drawing.Level1ParagraphProperties>();
-                    var sDefRp = sLvl1?.GetFirstChild<Drawing.DefaultRunProperties>();
+                    var sDefRp = GetLevelDefRp(styleList, level);
                     if (sDefRp?.FontSize?.HasValue == true)
                         return sDefRp.FontSize.Value;
                 }
@@ -530,6 +524,29 @@ public partial class PowerPointHandler
         if (isSubTitle) return 3200;
 
         return null;
+    }
+
+    /// <summary>
+    /// Get the DefaultRunProperties for a given paragraph level (0-8) from a list style or text style element.
+    /// Maps level 0 → Level1ParagraphProperties, level 1 → Level2ParagraphProperties, etc.
+    /// </summary>
+    private static Drawing.DefaultRunProperties? GetLevelDefRp(OpenXmlCompositeElement? styleList, int level)
+    {
+        if (styleList == null) return null;
+        OpenXmlElement? lvlPpr = level switch
+        {
+            0 => styleList.GetFirstChild<Drawing.Level1ParagraphProperties>(),
+            1 => styleList.GetFirstChild<Drawing.Level2ParagraphProperties>(),
+            2 => styleList.GetFirstChild<Drawing.Level3ParagraphProperties>(),
+            3 => styleList.GetFirstChild<Drawing.Level4ParagraphProperties>(),
+            4 => styleList.GetFirstChild<Drawing.Level5ParagraphProperties>(),
+            5 => styleList.GetFirstChild<Drawing.Level6ParagraphProperties>(),
+            6 => styleList.GetFirstChild<Drawing.Level7ParagraphProperties>(),
+            7 => styleList.GetFirstChild<Drawing.Level8ParagraphProperties>(),
+            8 => styleList.GetFirstChild<Drawing.Level9ParagraphProperties>(),
+            _ => styleList.GetFirstChild<Drawing.Level1ParagraphProperties>(),
+        };
+        return lvlPpr?.GetFirstChild<Drawing.DefaultRunProperties>();
     }
 
     // ==================== Picture Rendering ====================
