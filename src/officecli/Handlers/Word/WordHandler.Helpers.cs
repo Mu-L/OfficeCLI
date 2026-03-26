@@ -577,7 +577,25 @@ public partial class WordHandler
             if (pgSz != null)
                 pgSz.InsertAfterSelf(cols);
             else
-                sectPr.PrependChild(cols);
+            {
+                // Insert after SectionType, or after last headerReference/footerReference
+                var sectionType = sectPr.GetFirstChild<SectionType>();
+                if (sectionType != null)
+                    sectionType.InsertAfterSelf(cols);
+                else
+                {
+                    OpenXmlElement? lastRef = null;
+                    foreach (var child in sectPr.ChildElements)
+                    {
+                        if (child is HeaderReference || child is FooterReference)
+                            lastRef = child;
+                    }
+                    if (lastRef != null)
+                        lastRef.InsertAfterSelf(cols);
+                    else
+                        sectPr.PrependChild(cols);
+                }
+            }
         }
         return cols;
     }
@@ -626,7 +644,7 @@ public partial class WordHandler
         if (existing != null) return existing;
 
         var pm = new PageMargin();
-        // Insert after PageSize if present, after SectionType, or prepend
+        // Insert after PageSize if present, after SectionType, after last headerRef/footerRef, or prepend
         var pageSize = sectPr.GetFirstChild<PageSize>();
         if (pageSize != null)
             pageSize.InsertAfterSelf(pm);
@@ -636,7 +654,18 @@ public partial class WordHandler
             if (sectionType != null)
                 sectionType.InsertAfterSelf(pm);
             else
-                sectPr.PrependChild(pm);
+            {
+                OpenXmlElement? lastRef = null;
+                foreach (var child in sectPr.ChildElements)
+                {
+                    if (child is HeaderReference || child is FooterReference)
+                        lastRef = child;
+                }
+                if (lastRef != null)
+                    lastRef.InsertAfterSelf(pm);
+                else
+                    sectPr.PrependChild(pm);
+            }
         }
         return pm;
     }
@@ -837,8 +866,9 @@ public partial class WordHandler
                         else if (colors.Count >= 2)
                         {
                             var angleMatch = System.Text.RegularExpressions.Regex.Match(innerXml, @"ang=""(\d+)""");
-                            var angle = angleMatch.Success ? int.Parse(angleMatch.Groups[1].Value) / 60000 : 0;
-                            node.Format["textFill"] = $"{colors[0]};{colors[1]};{angle}";
+                            var angle = angleMatch.Success ? int.Parse(angleMatch.Groups[1].Value) / 60000.0 : 0.0;
+                            var angleStr = angle % 1 == 0 ? $"{(int)angle}" : $"{angle:0.##}";
+                            node.Format["textFill"] = $"{colors[0]};{colors[1]};{angleStr}";
                         }
                         else if (colors.Count == 1)
                             node.Format["textFill"] = colors[0];
