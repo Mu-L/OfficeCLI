@@ -325,13 +325,23 @@ internal static partial class ChartHelper
                 var valEl = ser.GetFirstChild<C.Values>();
                 if (valEl != null)
                 {
-                    var nums = value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                        .Select(s => double.TryParse(s, System.Globalization.CultureInfo.InvariantCulture, out var d) ? d : 0.0)
-                        .ToArray();
                     valEl.RemoveAllChildren();
-                    var builtVals = BuildValues(nums);
-                    foreach (var child in builtVals.ChildElements.ToList())
-                        valEl.AppendChild(child.CloneNode(true));
+                    if (value.Contains('!'))
+                    {
+                        // Cell reference: e.g. Sheet1!B2:B4
+                        var builtVals = BuildValuesRef(value);
+                        foreach (var child in builtVals.ChildElements.ToList())
+                            valEl.AppendChild(child.CloneNode(true));
+                    }
+                    else
+                    {
+                        var nums = value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                            .Select(s => double.TryParse(s, System.Globalization.CultureInfo.InvariantCulture, out var d) ? d : 0.0)
+                            .ToArray();
+                        var builtVals = BuildValues(nums);
+                        foreach (var child in builtVals.ChildElements.ToList())
+                            valEl.AppendChild(child.CloneNode(true));
+                    }
                 }
                 break;
             }

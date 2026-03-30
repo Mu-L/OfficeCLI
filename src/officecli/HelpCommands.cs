@@ -38,13 +38,21 @@ internal static class HelpCommands
         // Extract verb and optional element.property (skip --help flags)
         string? verb = null;
         string? elementArg = null;
+        string? extraArg = null;
         foreach (var arg in args.Skip(1))
         {
             if (arg is "--help" or "-h" or "-?") continue;
+            if (arg.StartsWith("--")) continue;
             if (verb == null) { verb = arg.ToLowerInvariant(); continue; }
             if (elementArg == null) { elementArg = arg.ToLowerInvariant(); continue; }
+            extraArg = arg;
             break;
         }
+
+        // If extra args beyond element look like file paths or document paths,
+        // this is a real command — don't intercept for help
+        if (extraArg != null && (extraArg.Contains('.') || extraArg.Contains('/')))
+            return false;
 
         // Parse element.property syntax
         string? element = null;

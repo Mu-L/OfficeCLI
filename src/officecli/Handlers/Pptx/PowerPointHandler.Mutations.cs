@@ -8,7 +8,6 @@ using DocumentFormat.OpenXml.Presentation;
 using OfficeCli.Core;
 using Drawing = DocumentFormat.OpenXml.Drawing;
 using C = DocumentFormat.OpenXml.Drawing.Charts;
-using M = DocumentFormat.OpenXml.Math;
 
 namespace OfficeCli.Handlers;
 
@@ -29,6 +28,36 @@ public partial class PowerPointHandler
             {
                 notesSlidePart.DeletePart(notesSlidePart.NotesSlidePart);
             }
+            return null;
+        }
+
+        // Handle /slide[N]/table[M]/tr[R] — remove a table row
+        var tableRowMatch = Regex.Match(path, @"^/slide\[(\d+)\]/table\[(\d+)\]/tr\[(\d+)\]$");
+        if (tableRowMatch.Success)
+        {
+            var trSlideIdx = int.Parse(tableRowMatch.Groups[1].Value);
+            var tableIdx = int.Parse(tableRowMatch.Groups[2].Value);
+            var rowIdx = int.Parse(tableRowMatch.Groups[3].Value);
+
+            var trSlideParts = GetSlideParts().ToList();
+            if (trSlideIdx < 1 || trSlideIdx > trSlideParts.Count)
+                throw new ArgumentException($"Slide {trSlideIdx} not found (total: {trSlideParts.Count})");
+
+            var trSlidePart = trSlideParts[trSlideIdx - 1];
+            var trShapeTree = GetSlide(trSlidePart).CommonSlideData?.ShapeTree
+                ?? throw new InvalidOperationException("Slide has no shapes");
+
+            var tables = trShapeTree.Elements<GraphicFrame>()
+                .Where(gf => gf.Descendants<Drawing.Table>().Any()).ToList();
+            if (tableIdx < 1 || tableIdx > tables.Count)
+                throw new ArgumentException($"Table {tableIdx} not found (total: {tables.Count})");
+
+            var table = tables[tableIdx - 1].Descendants<Drawing.Table>().First();
+            var rows = table.Elements<Drawing.TableRow>().ToList();
+            if (rowIdx < 1 || rowIdx > rows.Count)
+                throw new ArgumentException($"Row {rowIdx} not found (total: {rows.Count})");
+
+            rows[rowIdx - 1].Remove();
             return null;
         }
 

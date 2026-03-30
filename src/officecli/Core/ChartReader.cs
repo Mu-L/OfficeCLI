@@ -765,6 +765,7 @@ internal static partial class ChartHelper
         var allSer = plotArea.Descendants<OpenXmlCompositeElement>()
             .Where(e => e.LocalName == "ser").ToList();
 
+        // Update existing series
         for (int i = 0; i < Math.Min(newData.Count, allSer.Count); i++)
         {
             var ser = allSer[i];
@@ -784,6 +785,52 @@ internal static partial class ChartHelper
                 var builtVals = BuildValues(sVals);
                 foreach (var child in builtVals.ChildElements.ToList())
                     valEl.AppendChild(child.CloneNode(true));
+            }
+        }
+
+        // Remove excess existing series
+        for (int i = newData.Count; i < allSer.Count; i++)
+            allSer[i].Remove();
+
+        // Add new series by cloning the last existing one as a template
+        if (newData.Count > allSer.Count && allSer.Count > 0)
+        {
+            var lastSer = allSer[^1];
+            var parent = lastSer.Parent!;
+            for (int i = allSer.Count; i < newData.Count; i++)
+            {
+                var (sName, sVals) = newData[i];
+                var newSer = (OpenXmlCompositeElement)lastSer.CloneNode(true);
+
+                // Update index and order
+                var idx = newSer.GetFirstChild<C.Index>();
+                if (idx != null) idx.Val = (uint)i;
+                var order = newSer.GetFirstChild<C.Order>();
+                if (order != null) order.Val = (uint)i;
+
+                // Update series name
+                var serText = newSer.GetFirstChild<C.SeriesText>();
+                if (serText != null)
+                {
+                    serText.RemoveAllChildren();
+                    serText.AppendChild(new C.NumericValue(sName));
+                }
+
+                // Update values
+                var valEl = newSer.GetFirstChild<C.Values>();
+                if (valEl != null)
+                {
+                    valEl.RemoveAllChildren();
+                    var builtVals = BuildValues(sVals);
+                    foreach (var child in builtVals.ChildElements.ToList())
+                        valEl.AppendChild(child.CloneNode(true));
+                }
+
+                // Remove cloned color so the new series gets a distinct auto-color
+                var spPr = newSer.GetFirstChild<C.ChartShapeProperties>();
+                if (spPr != null) spPr.Remove();
+
+                parent.AppendChild(newSer);
             }
         }
     }
