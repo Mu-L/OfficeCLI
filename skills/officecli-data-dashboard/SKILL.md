@@ -106,7 +106,7 @@ Read [creating.md](creating.md) and follow it step by step. It contains the comp
 | Scatter charts | Use `series1.xValues` NOT `series1.categories` (causes validation error) |
 | Reference lines | Format is `value:color:label:dash` (color BEFORE label) |
 | Cell range refs | Always `series1.values="Sheet1!B2:B13"`, never inline data |
-| raw-set ordering | activeTab and calcPr must be the LAST commands |
+| raw-set ordering | activeTab raw-set must be the LAST command. Use `set / --prop calc.fullCalcOnLoad=true` for calcPr (not raw-set). |
 | formulacf | Do NOT use `font.bold`. Use `fill` + `font.color` only |
 | Column widths | `import --header` does NOT auto-size. Set widths manually on **ALL sheets including Dashboard** |
 | Dashboard ### | KPI cells at 24pt bold WILL show ### if Dashboard columns are not set to width=22. See Step 4b |

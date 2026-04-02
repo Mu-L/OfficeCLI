@@ -113,7 +113,7 @@ ALL values on statement sheets are formulas. The only hardcoded numbers are on t
 | Cross-sheet `!` escaping | Use heredoc batch for ALL cross-sheet formulas. Verify with `officecli get` after each batch. |
 | Batch size limit | 8-12 operations per batch, non-resident mode. Larger batches have ~33% failure rate. |
 | Batch JSON values | ALL values must be strings: `"true"` not `true`, `"24"` not `24` |
-| fullCalcOnLoad + iterate | MANDATORY. Always use `//x:definedNames --action insertafter` (financial models always have named ranges) |
+| fullCalcOnLoad + iterate | MANDATORY. Use `officecli set model.xlsx / --prop calc.fullCalcOnLoad=true --prop calc.iterate=true`. Do NOT use raw-set (creates duplicates). |
 | Blue inputs / black formulas | `font.color=0000FF` on Assumptions inputs, `font.color=000000` on all formula cells |
 | Balance sheet must balance | Explicit check formula: `=TotalAssets - TotalLiabilities - TotalEquity` must equal 0 |
 | Cash reconciliation | CF ending cash must equal BS cash for every period |
@@ -122,7 +122,7 @@ ALL values on statement sheets are formulas. The only hardcoded numbers are on t
 | Named ranges required | Define for all key assumptions (WACC, growth rates, tax rate). Required for auditability. |
 | Column widths | No auto-fit. Set explicitly: labels=22-28, numbers=14-18, year headers=12-14 |
 | formulacf no font.bold | Use `fill` + `font.color` only. `font.bold` causes validation errors. |
-| raw-set ordering | activeTab and calcPr MUST be the absolute last commands |
+| raw-set ordering | activeTab raw-set MUST be the last command. calcPr uses high-level `set / --prop calc.*` instead of raw-set. |
 | BS Cash = CF Ending Cash | BS Cash ALWAYS equals `=Cash Flow!B19`, including Year 1. Never use cash-as-plug or reference Assumptions directly. |
 | Chart title `$` in shell | Use heredoc batch for chart titles containing `$` to prevent shell expansion. |
 

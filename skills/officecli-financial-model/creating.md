@@ -82,7 +82,7 @@ Follow this exact 10-step sequence. Do not reorder.
 7. **Named ranges** -- Define for all key assumptions.
 8. **Formatting + colors** -- Number formats, blue/black font colors, subtotal styling, tab colors.
 9. **Charts** -- Cell range references and `preset=dashboard`.
-10. **Protection + raw-set + validate** -- Lock/unlock, protect, activeTab, calcPr (LAST), validate.
+10. **Protection + calcPr + raw-set + validate** -- Lock/unlock, protect, `set / --prop calc.*`, activeTab raw-set (LAST), validate.
 
 ---
 
@@ -595,10 +595,8 @@ officecli set model.xlsx "/Income Statement" --prop printArea="A1:D25"
 officecli raw-set model.xlsx /workbook \
   --xpath "//x:sheets" --action insertbefore \
   --xml '<bookViews><workbookView activeTab="0" /></bookViews>'
-# calcPr -- ONE canonical recipe. ALWAYS //x:definedNames (financial models always have named ranges)
-officecli raw-set model.xlsx /workbook \
-  --xpath "//x:definedNames" --action insertafter \
-  --xml '<calcPr fullCalcOnLoad="1" iterate="1" iterateCount="100" iterateDelta="0.001" />'
+# calcPr -- use high-level set API (do NOT use raw-set, which creates duplicate calcPr elements)
+officecli set model.xlsx / --prop calc.fullCalcOnLoad=true --prop calc.iterate=true --prop calc.iterateCount=100 --prop calc.iterateDelta=0.001
 # Validate immediately
 officecli validate model.xlsx
 ```
@@ -634,7 +632,7 @@ officecli view model.xlsx text                                   # 9. Visual che
 |---|-------|------------|
 | F-1 | `!` escaping in cross-sheet formulas | Always use heredoc batch. Verify with `officecli get`. If `\!` appears, delete and re-run. |
 | F-2 | Batch failure at scale | 8-12 ops per batch. Non-resident mode. Retry individually. Build time ~3-5 min for complex models. |
-| F-3 | calcPr XML ordering | Always `//x:definedNames --action insertafter` (financial models always have named ranges). Validate after. |
+| F-3 | calcPr duplicate elements | Use `set / --prop calc.fullCalcOnLoad=true` (high-level API). Do NOT use raw-set to insert calcPr — it creates duplicates. |
 | F-4 | No auto-fit column width | Set explicitly: labels=24-28, numbers=14-18. |
 | F-5 | Cannot rename sheets | Plan names upfront. Create with correct name. |
 | F-6 | Sensitivity tables are manual | Each cell = explicit self-contained formula. Build row-by-row in separate batches. |
