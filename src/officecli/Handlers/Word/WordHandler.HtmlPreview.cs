@@ -48,6 +48,12 @@ public partial class WordHandler
     /// <summary>Current render context — set during ViewAsHtml, used by all render methods.</summary>
     private HtmlRenderContext _ctx = null!;
 
+    /// <summary>Cached EastAsia language from themeFontLang/docDefaults (e.g. "zh-CN", "ja-JP", "ko-KR").</summary>
+    private string? _eastAsiaLang;
+
+    /// <summary>CJK font resolved from theme's supplemental font list (e.g. "Microsoft YaHei" for Hans).</summary>
+    private string? _themeCjkFont;
+
     /// <summary>
     /// Generate a self-contained HTML file that previews the Word document
     /// with formatting, tables, images, and lists.
@@ -55,6 +61,7 @@ public partial class WordHandler
     public string ViewAsHtml(string? pageFilter = null)
     {
         _ctx = new HtmlRenderContext();
+        ResolveThemeCjkFont();
         var body = _doc.MainDocumentPart?.Document?.Body;
         if (body == null) return "<html><body><p>(empty document)</p></body></html>";
 
@@ -70,10 +77,17 @@ public partial class WordHandler
         sb.AppendLine("<style>");
         sb.AppendLine(GenerateWordCss(pgLayout, docDef));
         sb.AppendLine("</style>");
-        // Load all document fonts from Google Fonts
+        // Load document fonts: local files > local() > Google Fonts
         var docFonts = CollectDocumentFonts();
         if (docFonts.Count > 0)
         {
+            var fontFaces = ResolveLocalFontFaces(docFonts);
+            if (fontFaces.Length > 0)
+            {
+                sb.AppendLine("<style>");
+                sb.Append(fontFaces);
+                sb.AppendLine("</style>");
+            }
             var families = string.Join("&", docFonts.Select(f =>
                 $"family={f.Replace(' ', '+')}:ital,wght@0,400;0,700;1,400;1,700"));
             sb.AppendLine($"<link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css2?{families}&display=swap\">");
@@ -469,6 +483,75 @@ public partial class WordHandler
             || f.Equals("Tahoma", StringComparison.OrdinalIgnoreCase)
             || f.Equals("Courier New", StringComparison.OrdinalIgnoreCase));
         return fonts;
+    }
+
+    /// <summary>
+    /// Resolve CJK font from theme supplemental font list (like libra's ThemeHandler).
+    /// Also reads themeFontLang/eastAsia language for fallback.
+    /// </summary>
+    private void ResolveThemeCjkFont()
+    {
+        // 1. Read eastAsia language from settings (w:themeFontLang) or docDefaults (w:lang)
+        var settings = _doc.MainDocumentPart?.DocumentSettingsPart?.Settings;
+        var themeFontLang = settings?.Descendants<DocumentFormat.OpenXml.Wordprocessing.ThemeFontLanguages>().FirstOrDefault();
+        _eastAsiaLang = themeFontLang?.EastAsia?.Value;
+
+        // Also check docDefaults for w:lang eastAsia
+        if (_eastAsiaLang == null)
+        {
+            var docDefLang = _doc.MainDocumentPart?.StyleDefinitionsPart?.Styles
+                ?.DocDefaults?.RunPropertiesDefault?.RunPropertiesBaseStyle
+                ?.Languages;
+            _eastAsiaLang = docDefLang?.EastAsia?.Value;
+        }
+
+        // 2. Read CJK font from theme supplemental font list
+        var fontScheme = _doc.MainDocumentPart?.ThemePart?.Theme?.ThemeElements?.FontScheme;
+        if (fontScheme == null) return;
+
+        // Map eastAsia language to OOXML script tag
+        var scriptTag = (_eastAsiaLang?.ToLowerInvariant()) switch
+        {
+            string l when l.StartsWith("ja") => "Jpan",
+            string l when l.StartsWith("ko") => "Hang",
+            string l when l.StartsWith("zh") && l.Contains("tw") => "Hant",
+            string l when l.StartsWith("zh") && l.Contains("hk") => "Hant",
+            _ => "Hans" // default to simplified Chinese
+        };
+
+        // Search supplemental font list in minorFont (body text), then majorFont (headings)
+        foreach (var fontCollection in new OpenXmlElement?[] { fontScheme.MinorFont, fontScheme.MajorFont })
+        {
+            if (fontCollection == null) continue;
+            foreach (var sf in fontCollection.Descendants<A.SupplementalFont>())
+            {
+                if (sf.Script?.Value == scriptTag && !string.IsNullOrEmpty(sf.Typeface?.Value))
+                {
+                    _themeCjkFont = sf.Typeface.Value;
+                    return;
+                }
+            }
+        }
+
+        // Fallback: use EastAsianFont from theme
+        var eaFont = fontScheme.MinorFont?.Descendants<A.EastAsianFont>().FirstOrDefault()?.Typeface?.Value
+            ?? fontScheme.MajorFont?.Descendants<A.EastAsianFont>().FirstOrDefault()?.Typeface?.Value;
+        if (!string.IsNullOrEmpty(eaFont))
+            _themeCjkFont = eaFont;
+    }
+
+    /// <summary>Generate @font-face rules with local() for document fonts.</summary>
+    private static string ResolveLocalFontFaces(HashSet<string> docFonts)
+    {
+        var sb = new StringBuilder();
+        foreach (var font in docFonts)
+        {
+            sb.AppendLine($"@font-face {{ font-family: '{font}'; src: local('{font}'); }}");
+            sb.AppendLine($"@font-face {{ font-family: '{font}'; font-weight: bold; src: local('{font} Bold'); }}");
+            sb.AppendLine($"@font-face {{ font-family: '{font}'; font-style: italic; src: local('{font} Italic'); }}");
+            sb.AppendLine($"@font-face {{ font-family: '{font}'; font-weight: bold; font-style: italic; src: local('{font} Bold Italic'); }}");
+        }
+        return sb.ToString();
     }
 
     private static string? NonEmpty(string? s) => string.IsNullOrEmpty(s) ? null : s;

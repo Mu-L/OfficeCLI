@@ -386,6 +386,7 @@ public partial class WordHandler
 
     /// <summary>
     /// Resolve PageBreakBefore from the style chain.
+    /// Falls back to Word built-in defaults for latent styles not defined in styles.xml.
     /// </summary>
     private PageBreakBefore? ResolvePageBreakBeforeFromStyle(string? styleId)
     {
@@ -396,7 +397,13 @@ public partial class WordHandler
         {
             var style = _doc.MainDocumentPart?.StyleDefinitionsPart?.Styles
                 ?.Elements<Style>().FirstOrDefault(s => s.StyleId?.Value == currentStyleId);
-            if (style == null) break;
+            if (style == null)
+            {
+                // Word built-in TOCHeading has pageBreakBefore=true by default
+                if (currentStyleId == "TOCHeading")
+                    return new PageBreakBefore();
+                break;
+            }
             var pgBB = style.StyleParagraphProperties?.PageBreakBefore;
             if (pgBB != null) return pgBB;
             currentStyleId = style.BasedOn?.Val?.Value;
@@ -926,14 +933,21 @@ public partial class WordHandler
     /// <summary>
     /// Returns CSS fallback fonts for common Windows Chinese fonts that are unavailable on Mac.
     /// </summary>
-    private static string? GetChineseFontFallback(string font) => font switch
+    private string? GetChineseFontFallback(string font)
     {
-        "仿宋_GB2312" => "'仿宋',FangSong,STFangsong",
-        "楷体_GB2312" => "'楷体',KaiTi,STKaiti",
-        "长城小标宋体" => "'华文中宋',STZhongsong,'宋体',SimSun",
-        "黑体" => "'Heiti SC',STHeiti",
-        _ => null
-    };
+        var result = font switch
+        {
+            "仿宋_GB2312" => "'仿宋',FangSong,STFangsong",
+            "楷体_GB2312" => "'楷体',KaiTi,STKaiti",
+            "长城小标宋体" => "'华文中宋',STZhongsong,'宋体',SimSun",
+            "黑体" => "'Heiti SC',STHeiti",
+            _ => null
+        };
+        if (result != null) return result;
+        // Fall back to CJK font mapping for western fonts
+        var cjk = GetCjkFontFallback(font, _eastAsiaLang, _themeCjkFont);
+        return string.IsNullOrEmpty(cjk) ? null : cjk.TrimStart(',', ' ');
+    }
 
     private static string CssSanitize(string value) =>
         Regex.Replace(value, @"[""'\\<>&;{}]", "");
@@ -988,7 +1002,7 @@ public partial class WordHandler
 
     // ==================== CSS Stylesheet ====================
 
-    private static string GenerateWordCss(PageLayout pg, DocDef dd)
+    private string GenerateWordCss(PageLayout pg, DocDef dd)
     {
         // Use pt units (twips/20) for pixel-perfect accuracy — no cm→px conversion loss
         var mL = $"{pg.MarginLeftPt:0.#}pt";
@@ -997,7 +1011,7 @@ public partial class WordHandler
         var mB = $"{pg.MarginBottomPt:0.#}pt";
         // Build font fallback chain: document font → platform-specific CJK equivalents → generic
         var docFont = CssSanitize(dd.Font);
-        var cjkFallback = GetCjkFontFallback(docFont);
+        var cjkFallback = GetCjkFontFallback(docFont, _eastAsiaLang, _themeCjkFont);
         var font = $"\'{docFont}\'{cjkFallback}, \'Microsoft YaHei\', -apple-system, \'PingFang SC\', sans-serif";
         var pageH = $"{pg.HeightPt:0.#}pt";
         var pageW = $"{pg.WidthPt:0.#}pt";
@@ -1049,21 +1063,47 @@ public partial class WordHandler
     }
 
     /// <summary>Get platform-specific CJK font fallback for the given document font.</summary>
-    private static string GetCjkFontFallback(string docFont)
+    /// <param name="docFont">The font name from the document.</param>
+    /// <param name="eastAsiaLang">Optional EastAsia language code (e.g. "zh-CN", "ja-JP", "ko-KR").</param>
+    private static string GetCjkFontFallback(string docFont, string? eastAsiaLang = null, string? themeCjkFont = null)
     {
         var lower = docFont.ToLowerInvariant();
-        // Song/宋 → serif CJK fonts (macOS: Songti SC / STSong)
+        // Chinese font names — match directly
         if (lower.Contains("宋") || lower.Contains("song") || lower == "simsun")
             return ", 'Songti SC', 'STSong'";
-        // Hei/黑 → sans-serif CJK fonts (macOS: PingFang SC / STHeiti)
         if (lower.Contains("黑") || lower.Contains("hei") || lower == "simhei")
             return ", 'PingFang SC', 'STHeiti'";
-        // Kai/楷 → cursive CJK fonts (macOS: Kaiti SC / STKaiti)
         if (lower.Contains("楷") || lower.Contains("kai"))
             return ", 'Kaiti SC', 'STKaiti'";
-        // FangSong/仿宋 → (macOS: STFangsong)
         if (lower.Contains("仿宋") || lower.Contains("fangsong"))
             return ", 'STFangsong'";
+        // Japanese font names
+        if (lower.Contains("明朝") || lower.Contains("mincho"))
+            return ", 'Hiragino Mincho ProN', 'Yu Mincho', 'MS Mincho'";
+        if (lower.Contains("ゴシック") || lower.Contains("gothic") || lower == "ms gothic" || lower == "yu gothic")
+            return ", 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Yu Gothic'";
+        // Korean font names
+        if (lower.Contains("바탕") || lower == "batang" || lower == "batangche")
+            return ", 'Apple SD Gothic Neo', 'Malgun Gothic', 'Batang'";
+        if (lower.Contains("굴림") || lower == "gulim" || lower == "dotum" || lower == "malgun gothic")
+            return ", 'Apple SD Gothic Neo', 'Malgun Gothic'";
+
+        // Western fonts — use EastAsia language to pick the right CJK fallback
+        bool isWestern = lower is "calibri" or "arial" or "helvetica" or "verdana" or "segoe ui"
+            or "tahoma" or "trebuchet ms" or "times new roman" or "cambria" or "georgia"
+            or "garamond" or "book antiqua" or "palatino linotype";
+        if (isWestern)
+        {
+            // Prefer theme-resolved CJK font (from supplemental font list)
+            var prefix = !string.IsNullOrEmpty(themeCjkFont) ? $", '{themeCjkFont}'" : "";
+            var lang = eastAsiaLang?.ToLowerInvariant() ?? "";
+            if (lang.StartsWith("ja"))
+                return prefix + ", 'Hiragino Mincho ProN', 'Yu Mincho', 'MS Mincho'";
+            if (lang.StartsWith("ko"))
+                return prefix + ", 'Apple SD Gothic Neo', 'Malgun Gothic', 'Batang'";
+            // Default: Chinese (zh or unspecified)
+            return prefix + ", 'SimSun', '宋体', 'Songti SC', 'STSong'";
+        }
         return "";
     }
 }
