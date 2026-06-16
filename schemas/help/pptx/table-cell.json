@@ -29,9 +29,11 @@
     },
     "colspan": {
       "type": "number",
-      "description": "horizontal cell span (a:tc @gridSpan). Surfaces only when the cell spans more than one column. Read-only — set spans by structuring the table at Add time.",
-      "add": false, "set": false, "get": true,
+      "description": "horizontal cell span (a:tc @gridSpan) — number of grid columns this cell spans (>=2 means merged across). Setting colspan=N also stamps hMerge=true on the next (N-1) cells in the same row, matching the convenience prop merge.right. Surfaces on Get only when the cell spans more than one column. Canonical name matches docx; alias: gridspan.",
+      "add": false, "set": true, "get": true,
+      "aliases": ["gridspan"],
       "readback": "integer ≥ 2",
+      "examples": ["--prop colspan=3"],
       "enforcement": "report"
     },
     "rowspan": {
@@ -280,16 +282,6 @@
       "get": true,
       "description": "first run baseline offset for the cell text (percent units; positive=raised).",
       "readback": "percent (e.g. 30)",
-      "enforcement": "report"
-    },
-    "gridSpan": {
-      "type": "number",
-      "add": false,
-      "set": true,
-      "get": true,
-      "description": "horizontal merge span — number of grid columns this cell spans (>=2 means merged across). Setting gridSpan=N also stamps hMerge=true on the next (N-1) cells in the same row, matching the convenience prop merge.right.",
-      "readback": "integer span",
-      "examples": ["--prop gridSpan=3"],
       "enforcement": "report"
     },
     "hmerge": {
